@@ -1,4 +1,12 @@
+// minimal receiver page: auto-start, poll, redirect-to-landing on close
 (function () {
+  function $(id) {
+    return document.getElementById(id);
+  }
+  function setStatus(t) {
+    $("status").textContent = t || "";
+  }
+
   function xhr(method, url, body, cb) {
     try {
       var x = new XMLHttpRequest();
@@ -15,31 +23,25 @@
       cb(e, null);
     }
   }
-  function el(id) {
-    return document.getElementById(id);
-  }
-  function setStatus(t) {
-    el("status").textContent = t || "";
-  }
 
-  var sid = null;
-  var rTok = null;
-  var pollTimer = null;
-  var hbTimer = null;
+  var sessionId = null,
+    receiverToken = null,
+    pollTimer = null,
+    hbTimer = null;
 
-  function startHB() {
-    stopHB();
+  function startHeartbeat() {
+    stopHeartbeat();
     hbTimer = setInterval(function () {
-      if (!sid) return;
+      if (!sessionId) return;
       xhr(
         "POST",
         "/api/heartbeat",
-        { sessionId: sid, role: "receiver" },
+        { sessionId: sessionId, role: "receiver" },
         function () {}
       );
     }, 30000);
   }
-  function stopHB() {
+  function stopHeartbeat() {
     if (hbTimer) {
       clearInterval(hbTimer);
       hbTimer = null;
@@ -49,45 +51,44 @@
   function startPoll() {
     stopPoll();
     pollTimer = setInterval(function () {
-      if (!sid) return;
+      if (!sessionId) return;
       xhr(
         "GET",
-        "/api/session/" + encodeURIComponent(sid) + "/status",
+        "/api/session/" + encodeURIComponent(sessionId) + "/status",
         null,
         function (err, x) {
           if (err || !x) return;
           if (x.status !== 200) {
-            teardown("ttl");
+            redirectLanding("ttl");
             return;
           }
-          var j;
+
+          var json;
           try {
-            j = JSON.parse(x.responseText);
-          } catch (_e) {
+            json = JSON.parse(x.responseText);
+          } catch {
             return;
           }
 
-          if (j.closed) {
-            teardown(j.closedBy || "ttl");
+          if (json.closed) {
+            redirectLanding(json.closedBy || "ttl");
             return;
           }
 
-          if (j.hasFile && rTok) {
-            // Kobo tends to prefer a direct GET to the same origin
+          if (json.hasFile && receiverToken) {
             var href =
-              location.origin +
               "/api/download/" +
-              encodeURIComponent(sid) +
+              encodeURIComponent(sessionId) +
               "?receiverToken=" +
-              encodeURIComponent(rTok);
-            var a = el("downloadBtn");
-            a.href = href;
-            a.style.display = "block";
+              encodeURIComponent(receiverToken);
+            $("downloadBtn").setAttribute("href", href);
+            $("downloadBtn").style.display = "block";
             setStatus(
-              "File ready" + (j.file && j.file.name ? ": " + j.file.name : "")
+              "File ready" +
+                (json.file && json.file.name ? ": " + json.file.name : "")
             );
           } else {
-            el("downloadBtn").style.display = "none";
+            $("downloadBtn").style.display = "none";
             setStatus("Waiting for Sender to upload…");
           }
         }
@@ -101,88 +102,67 @@
     }
   }
 
-  function teardown(reason) {
-    stopPoll();
-    stopHB();
-    var s = "Session expired.";
-    if (reason === "sender") s = "Ended by Sender.";
-    else if (reason === "receiver") s = "Ended by Receiver.";
-    setStatus(s);
-  }
-
-  // auto-close the session when the page is left (djazz-style)
-  function autoDisconnect() {
-    if (!sid) return;
-    try {
-      navigator.sendBeacon &&
-        navigator.sendBeacon(
-          "/api/disconnect",
-          new Blob([JSON.stringify({ sessionId: sid, by: "receiver" })], {
-            type: "application/json",
-          })
-        );
-    } catch (_e) {
-      // fallback; fire-and-forget
-      xhr(
-        "POST",
-        "/api/disconnect",
-        { sessionId: sid, by: "receiver" },
-        function () {}
-      );
-    }
+  function redirectLanding(reason) {
+    // small delay so the user can see the message flash on e-ink
+    setTimeout(function () {
+      try {
+        // hint to server that receiver is leaving (so sender gets “ended by receiver” quickly)
+        if (sessionId) {
+          var data = new Blob(
+            [JSON.stringify({ sessionId: sessionId, by: "receiver" })],
+            { type: "application/json" }
+          );
+          navigator.sendBeacon && navigator.sendBeacon("/api/disconnect", data);
+        }
+      } catch {}
+      window.location.href = "/"; // landing
+    }, 200);
   }
 
   function createSession() {
     setStatus("Creating session…");
     xhr("POST", "/api/session", { role: "receiver" }, function (err, x) {
-      if (err || !x) {
-        setStatus("Network error.");
-        return;
-      }
-      if (x.status !== 200) {
+      if (err || !x || x.status !== 200) {
         setStatus("Failed to create session.");
         return;
       }
-      var j;
+
+      var json;
       try {
-        j = JSON.parse(x.responseText);
-      } catch (_e) {
+        json = JSON.parse(x.responseText);
+      } catch {
         setStatus("Bad response.");
         return;
       }
 
-      sid = j.sessionId;
-      rTok = j.receiverToken;
+      sessionId = json.sessionId;
+      receiverToken = json.receiverToken;
 
-      el("code").textContent = j.code;
-      // Use the new PNG endpoint (works on Kobo)
-      el("qr").src = "/api/qr/" + encodeURIComponent(sid) + ".png";
-
-      el("sessionBox").style.display = "block";
+      $("code").textContent = json.code;
+      $("qr").src = "/api/qr/" + encodeURIComponent(sessionId) + ".png";
       setStatus("Waiting for Sender to upload…");
 
-      startHB();
+      startHeartbeat();
       startPoll();
     });
   }
 
-  function ready() {
-    // auto-create on load
+  // inform server we left (disconnect=receiver) so sender bounces home
+  window.addEventListener("pagehide", function () {
+    try {
+      if (!sessionId) return;
+      var data = new Blob(
+        [JSON.stringify({ sessionId: sessionId, by: "receiver" })],
+        { type: "application/json" }
+      );
+      navigator.sendBeacon && navigator.sendBeacon("/api/disconnect", data);
+    } catch {}
+  });
+
+  // Auto-start immediately — no Start button
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", createSession);
+  } else {
     createSession();
-
-    // auto-disconnect when navigating away (unload/pagehide better for e-ink)
-    window.addEventListener("pagehide", autoDisconnect);
-    window.addEventListener("beforeunload", autoDisconnect);
-    document.addEventListener(
-      "visibilitychange",
-      function () {
-        if (document.visibilityState === "hidden") autoDisconnect();
-      },
-      { passive: true }
-    );
   }
-
-  if (document.readyState === "loading")
-    document.addEventListener("DOMContentLoaded", ready);
-  else ready();
 })();

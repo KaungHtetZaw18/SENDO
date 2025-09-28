@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sendo — Sender</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        --ink: #111;
+        --muted: #666;
+        --border: #d9d9d9;
+        --paper: #fff;
+        --bg: #f6f6f6;
+        --accent: #111;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial,
+          sans-serif;
+      }
+      .wrap {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      h1 {
+        font-size: 24px;
+        margin: 8px 0 4px;
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 14px;
+        margin-bottom: 16px;
+      }
+      .card {
+        background: var(--paper);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 14px;
+        margin: 12px 0;
+      }
+      .row {
+        margin: 10px 0;
+      }
+      .input {
+        width: 100%;
+        padding: 12px 14px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        font-size: 16px;
+      }
+      .btn {
+        display: block;
+        width: 100%;
+        padding: 14px 16px;
+        text-align: center;
+        font-weight: 600;
+        background: var(--accent);
+        color: #fff;
+        border: 1px solid #000;
+        border-radius: 12px;
+        text-decoration: none;
+      }
+      .btn[disabled] {
+        opacity: 0.6;
+        pointer-events: none;
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .mono {
+        font-family: ui-monospace, Menlo, Consolas, monospace;
+      }
+      .info {
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px;
+        margin-top: 18px;
+        font-size: 14px;
+        line-height: 1.45;
+      }
+      .footer {
+        margin-top: 24px;
+        color: var(--muted);
+        font-size: 13px;
+        text-align: center;
+      }
+      .hide {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Sendo — Sender</h1>
+      <div class="sub">
+        Enter the 4-character key from your Kobo/Kindle, then upload an e-book.
+      </div>
+
+      <!-- Connect -->
+      <div class="card">
+        <div class="row">
+          <input
+            id="code"
+            class="input mono"
+            maxlength="4"
+            placeholder="Enter receiver key (e.g. A3BF)"
+          />
+        </div>
+        <div class="row">
+          <button id="connectBtn" class="btn">Connect</button>
+        </div>
+        <div id="connectStatus" class="muted"></div>
+      </div>
+
+      <!-- Upload (shown after connect) -->
+      <div id="uibox" class="card hide">
+        <div id="connectedTo" class="muted mono"></div>
+        <div class="row">
+          <input
+            id="file"
+            type="file"
+            class="input"
+            accept=".epub,.mobi,.azw,.azw3,.pdf,.txt"
+          />
+        </div>
+        <div class="row">
+          <button id="uploadBtn" class="btn">Upload</button>
+        </div>
+        <div id="uploadStatus" class="muted"></div>
+      </div>
+
+      <!-- Sender-side explainer ONLY (per your request) -->
+      <div class="info">
+        <p>
+          Open this page on your Kobo or Kindle e-reader. A unique 4-character
+          key will appear above, along with a QR code for quick access.
+        </p>
+        <p>
+          On another device, enter the key and upload an e-book. Once uploaded,
+          the e-book will appear here as a download link on your e-reader.
+        </p>
+        <p>
+          Uploaded e-books are stored temporarily while your e-reader is
+          connected. They are deleted shortly after you disconnect, refresh the
+          page, or close Wi-Fi.
+        </p>
+        <p>
+          Supported formats: <strong>EPUB, MOBI, PDF, TXT</strong>. Kobo users
+          may use Kepubify conversion, Kindle users may use KindleGen for MOBI
+          compatibility.
+        </p>
+      </div>
+
+      <div class="footer">Created by Kaung • © 2025 Sendo</div>
+    </div>
+
+    <script src="/sender.js" defer></script>
+  </body>
+</html>
