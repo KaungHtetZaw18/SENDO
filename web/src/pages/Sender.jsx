@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Spinner from "../components/Spinner.jsx";
 import Toast from "../components/Toast.jsx";
+import Footer from "../components/Footer.jsx";
+import InfoNote from "../components/InfoNote.jsx";
 import { useHeartbeat } from "../hooks/useHeartbeat.js";
 const API_BASE =
   import.meta.env.VITE_API_BASE ||
@@ -224,6 +226,8 @@ function Uploader({ sessionId, senderToken, onToast }) {
         Upload
       </button>
       {status && <p className="muted text-sm">{status}</p>}
+      <InfoNote />
+      <Footer />
     </form>
   );
 }

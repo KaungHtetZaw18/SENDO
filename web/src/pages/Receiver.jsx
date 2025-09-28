@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import Spinner from "../components/Spinner.jsx";
 import Toast from "../components/Toast.jsx";
+import Footer from "../components/Footer.jsx";
+import InfoNote from "../components/InfoNote.jsx";
 import { useHeartbeat } from "../hooks/useHeartbeat.js";
 
 const API_BASE =
@@ -213,6 +215,8 @@ export default function Receiver() {
       <Toast open={closedNoti} kind="error">
         Session closed.
       </Toast>
+      <InfoNote />
+      <Footer />
     </main>
   );
 }

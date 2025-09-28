@@ -51,6 +51,23 @@ async function closeAndCleanup(session) {
   closeSession(session);
 }
 
+function isEreaderUA(req) {
+  const ua = String(req.headers["user-agent"] || "");
+  // Common e-reader identifiers:
+  // Kobo, Kindle (incl. Silk), Tolino, PocketBook, Nook, Onyx Boox (Ink/E-ink)
+  return /(Kobo|Kindle|Silk|Tolino|PocketBook|Nook|E-ink|Eink|InkPalm)/i.test(
+    ua
+  );
+}
+
+function wantsLite(req) {
+  const q = req.query || {};
+  // Allow manual override by querystring
+  if (q.mode === "lite") return true;
+  if (q.mode === "full") return false;
+  return isEreaderUA(req);
+}
+
 // Allowed e-book extensions
 const ALLOWED_EXTS = new Set([
   ".epub",
@@ -309,14 +326,27 @@ setInterval(() => {
 if (SERVE_WEB) {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
-
   const distDir = path.resolve(__dirname, "../web/dist");
+  const indexPath = path.join(distDir, "index.html");
+  const litePath = path.join(distDir, "lite.html");
+
   app.use(express.static(distDir));
 
-  // SPA fallback for any non-API route, e.g. /, /sender, /receiver
-  // Express v5/path-to-regexp v6: use a regex instead of "*"
+  // Always allow direct access to the lite page
+  app.get(["/lite", "/lite.html"], (_req, res) => res.sendFile(litePath));
+
+  // Smart receiver entry: e-readers (or ?mode=lite) get the lite page
+  app.get("/receiver", (req, res) => {
+    if (wantsLite(req)) return res.sendFile(litePath);
+    return res.sendFile(indexPath);
+  });
+
+  // Sender/landing should always be the React app
+  app.get(["/", "/sender"], (_req, res) => res.sendFile(indexPath));
+
+  // SPA fallback for everything else that’s not /api/*
   app.get(/^\/(?!api\/).*/, (_req, res) => {
-    res.sendFile(path.join(distDir, "index.html"));
+    res.sendFile(indexPath);
   });
 }
 
