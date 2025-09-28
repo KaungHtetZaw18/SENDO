@@ -351,8 +351,8 @@ setInterval(() => sweepExpired(), 60 * 1000);
 
 // ---- Liveness sweeper: close when one side is really gone ----
 // ---- Liveness sweeper: close when one side is really gone ----
-const SENDER_GONE_MS = 10000; // sender can refresh without being closed
-const RECEIVER_GONE_MS = 7000; // snappy cleanup on receiver leave
+const SENDER_GONE_MS = 180000; // 3 min
+const RECEIVER_GONE_MS = 180000; // 3 min
 
 setInterval(() => {
   try {

@@ -1,8 +1,7 @@
 (function () {
-  // ---- Config (same-origin API) ----
   var API = "";
 
-  // ---- tiny DOM helpers ----
+  // ----- helpers -----
   function $(id) {
     return document.getElementById(id);
   }
@@ -14,7 +13,6 @@
     setText("debug", t || "");
   }
 
-  // ---- minimal XHR (JSON) ----
   function xhr(method, url, body, cb) {
     try {
       var x = new XMLHttpRequest();
@@ -32,14 +30,25 @@
     }
   }
 
-  // ---- state ----
+  // ----- state -----
   var sessionId = null;
   var receiverToken = null;
   var hbTimer = null;
   var pollTimer = null;
   var beaconSent = false;
+  var redirecting = false;
 
-  // ---- heartbeat ----
+  function safeGoHome(reason) {
+    if (redirecting) return;
+    redirecting = true;
+    setDebug(reason || "");
+    // small delay lets user read the line on e-ink
+    setTimeout(function () {
+      location.replace("/");
+    }, 700);
+  }
+
+  // ----- heartbeat -----
   function startHeartbeat() {
     stopHeartbeat();
     hbTimer = setInterval(function () {
@@ -59,23 +68,31 @@
     }
   }
 
-  // ---- polling ----
+  // ----- polling -----
   function startPoll() {
     stopPoll();
     pollTimer = setInterval(function () {
       if (!sessionId) return;
+
       xhr(
         "GET",
         "/api/session/" + encodeURIComponent(sessionId) + "/status",
         null,
         function (err, x) {
           if (err || !x) return;
-          if (x.status !== 200) {
-            setDebug("status " + x.status + " on /status");
-            teardown();
-            location.replace("/");
+
+          // Definite disconnects → go home
+          if (x.status === 404 || x.status === 410) {
+            safeGoHome("session missing/closed (" + x.status + ")");
             return;
           }
+
+          // Transient errors: stay and retry
+          if (x.status !== 200) {
+            setDebug("temporary " + x.status + " on /status");
+            return;
+          }
+
           var json;
           try {
             json = JSON.parse(x.responseText);
@@ -83,12 +100,16 @@
             return;
           }
 
-          if (json.closed) {
-            teardown();
-            location.replace("/");
+          // Server says closed or TTL up
+          if (
+            json.closed ||
+            (typeof json.secondsLeft === "number" && json.secondsLeft <= 0)
+          ) {
+            safeGoHome("session closed (" + (json.closedBy || "ttl") + ")");
             return;
           }
 
+          // Normal UI updates
           if (json.hasFile && receiverToken) {
             var href =
               "/api/download/" +
@@ -108,7 +129,12 @@
           } else {
             var b = $("downloadBtn");
             if (b) b.style.display = "none";
-            setText("status", "Waiting for Sender to upload…");
+            setText(
+              "status",
+              json.senderConnected
+                ? "Connected. Waiting for Sender to upload…"
+                : "Waiting for Sender to join…"
+            );
           }
         }
       );
@@ -121,7 +147,7 @@
     }
   }
 
-  // ---- teardown ----
+  // ----- teardown -----
   function teardown() {
     stopHeartbeat();
     stopPoll();
@@ -130,7 +156,7 @@
     setText("status", "");
   }
 
-  // ---- disconnect beacon ----
+  // ----- disconnect beacon -----
   function sendBeaconDisconnect() {
     try {
       if (beaconSent) return;
@@ -147,59 +173,46 @@
   window.addEventListener("beforeunload", sendBeaconDisconnect, {
     capture: true,
   });
-  window.addEventListener("offline", sendBeaconDisconnect);
+  window.addEventListener("offline", function () {
+    setDebug("offline");
+    safeGoHome("offline");
+  });
 
-  // ---- init (SSR first, then XHR fallback) ----
+  // ----- init (SSR-aware) -----
   function init() {
-    // If server rendered the page with a ready session, use it immediately.
+    // If server pre-created a session (SSR receiver), use it
     if (window.__SESS_ID__) {
       sessionId = String(window.__SESS_ID__ || "");
       receiverToken = String(window.__RECV_TOKEN__ || "");
-      setText("status", "Waiting for Sender to upload…");
-
-      // Nudge QR to render on some e-ink engines
+      // nudge QR to bypass cache on e-ink
       var qre = $("qr");
       if (qre && qre.src) qre.src = qre.src.split("?")[0] + "?v=" + Date.now();
-
       startHeartbeat();
       startPoll();
       return;
     }
-
-    // Otherwise create client-side (GET-first for very old browsers)
     createSessionCompat();
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-  } else {
-    init();
-  }
-
-  // ---- client-side session creation (GET-first) ----
+  // ----- create session (GET-first for very old engines) -----
   function createSessionCompat() {
     setText("status", "Creating session…");
     setDebug("");
 
-    // 1) GET first
     xhr("GET", "/api/session/new?v=" + Date.now(), null, function (err, x) {
       if (!err && x && x.status === 200) {
         handleSessionResponse(x);
         return;
       }
-      if (x)
-        setDebug(
-          "GET /api/session/new failed (status " + x.status + "). Trying POST…"
-        );
+      if (x) setDebug("GET /api/session/new " + x.status + ", trying POST…");
 
-      // 2) Fallback to POST
       xhr("POST", "/api/session", { role: "receiver" }, function (err2, x2) {
         if (!err2 && x2 && x2.status === 200) {
           handleSessionResponse(x2);
           return;
         }
         setText("status", "Failed to create session.");
-        if (x2) setDebug("POST /api/session failed (status " + x2.status + ")");
+        if (x2) setDebug("POST /api/session " + x2.status);
       });
     });
   }
@@ -213,7 +226,6 @@
       setDebug("JSON parse error");
       return;
     }
-
     if (!json || !json.ok) {
       setText("status", "Server error creating session.");
       return;
@@ -222,10 +234,9 @@
     sessionId = json.sessionId;
     receiverToken = json.receiverToken;
 
-    // Show 4-char code in plain black text
     setText("code", json.code || "----");
 
-    // Robust QR loading (cache-bust + one retry + reflow trick)
+    // Robust QR loading (cache-bust + one retry)
     var qre = $("qr");
     if (qre) {
       var tried = 0;
@@ -233,9 +244,9 @@
         qre.onerror = function () {
           if (tried < 1) {
             tried++;
-            qre.removeAttribute("src"); // force reflow on some Kobo builds
+            qre.removeAttribute("src");
             setTimeout(setQR, 400);
-          } else setDebug("QR image failed to load.");
+          } else setDebug("QR failed to load.");
         };
         qre.src =
           "/api/qr/" + encodeURIComponent(sessionId) + ".png?v=" + Date.now();
@@ -243,8 +254,12 @@
       setQR();
     }
 
-    setText("status", "Waiting for Sender to upload…");
+    setText("status", "Waiting for Sender to join…");
     startHeartbeat();
     startPoll();
   }
+
+  if (document.readyState === "loading")
+    document.addEventListener("DOMContentLoaded", init);
+  else init();
 })();
