@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import Toast from "./components/Toast.jsx";
 import InfoNote from "./components/InfoNote.jsx";
 import Footer from "./components/Footer.jsx";
@@ -7,7 +6,6 @@ import { detectDevice } from "./utils/device";
 
 export default function App() {
   const d = detectDevice();
-  const navigate = useNavigate();
   const [closedBy, setClosedBy] = useState("");
   useEffect(() => {
     const p = new URLSearchParams(location.search);

@@ -137,5 +137,27 @@
     </div>
 
     <script src="/lite.js" defer></script>
+    <script>
+      (function () {
+        try {
+          var ua = navigator.userAgent || "";
+          var isEreader =
+            /(Kobo|Kindle|Silk|NetFront|InkView|E-ink|Eink|Boox|PocketBook|Tolino|Nook|InkPalm)/i.test(
+              ua
+            );
+          var isReceiverPath =
+            location.pathname === "/" || location.pathname === "/receiver";
+          if (
+            isEreader &&
+            isReceiverPath &&
+            !/mode=full/.test(location.search)
+          ) {
+            // Preserve any existing query, add a soft marker
+            var q = location.search ? location.search + "&" : "?";
+            location.replace("/lite.html" + q + "from=ua");
+          }
+        } catch (_) {}
+      })();
+    </script>
   </body>
 </html>

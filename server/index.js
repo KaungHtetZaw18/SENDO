@@ -42,17 +42,27 @@ app.get("/api/health", (_req, res) => {
 });
 
 /* ----------------------- Helpers ----------------------- */
+// --- E-reader detection (server) ---
 function isEreaderUA(req) {
   const ua = String(req.headers["user-agent"] || "");
-  return /(Kobo|Kindle|Silk|Tolino|PocketBook|Nook|E-ink|Eink|InkPalm)/i.test(
+
+  // Common e-reader signatures (exact strings vary by model/browser)
+  // - Kindle: “Kindle/…”, “Silk/…”, older NetFront
+  // - Kobo: “Kobo”, sometimes “InkView”/“E-ink”
+  // - PocketBook, Tolino, Nook, InkPalm, BOOX
+  return /(Kobo|Kindle|Silk|NetFront|InkView|E-ink|Eink|Boox|PocketBook|Tolino|Nook|InkPalm)/i.test(
     ua
   );
 }
 
 function wantsLite(req) {
   const q = req.query || {};
+
+  // Manual override (handy for debugging)
   if (q.mode === "lite") return true;
   if (q.mode === "full") return false;
+
+  // Default: use UA
   return isEreaderUA(req);
 }
 
