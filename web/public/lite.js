@@ -152,10 +152,11 @@
     setText("status", "Creating session…");
     setDebug("");
 
-    // 1) Try GET (friendly to very old browsers)
+    // 1) GET first — friendlier to older e-ink browsers
     xhr("GET", "/api/session/new?v=" + Date.now(), null, function (err, x) {
       if (!err && x && x.status === 200) {
-        return handleSessionResponse(x);
+        handleSessionResponse(x);
+        return;
       }
       if (x)
         setDebug(
@@ -165,7 +166,8 @@
       // 2) Fallback to POST
       xhr("POST", "/api/session", { role: "receiver" }, function (err2, x2) {
         if (!err2 && x2 && x2.status === 200) {
-          return handleSessionResponse(x2);
+          handleSessionResponse(x2);
+          return;
         }
         setText("status", "Failed to create session.");
         if (x2) setDebug("POST /api/session failed (status " + x2.status + ")");
@@ -182,7 +184,6 @@
       setDebug("JSON parse error");
       return;
     }
-
     if (!json || !json.ok) {
       setText("status", "Server error creating session.");
       return;
@@ -191,10 +192,10 @@
     sessionId = json.sessionId;
     receiverToken = json.receiverToken;
 
-    // Show code
+    // Show code (plain black text for e-ink)
     setText("code", json.code || "----");
 
-    // Load QR as PNG with cache-bust; retry once if it errors (common on Kobo)
+    // Robust QR loading: cache-bust + 1 retry + force reflow trick
     var qre = $("qr");
     if (qre) {
       var tried = 0;
@@ -202,7 +203,9 @@
         qre.onerror = function () {
           if (tried < 1) {
             tried++;
-            setTimeout(setQR, 500);
+            // clear src first to force reflow on some Kobo builds
+            qre.removeAttribute("src");
+            setTimeout(setQR, 400);
           } else setDebug("QR image failed to load.");
         };
         qre.src =

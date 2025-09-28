@@ -80,6 +80,10 @@ export function sweepExpired() {
   }
 }
 
+export function allSessions() {
+  return Array.from(SESSIONS.values());
+}
+
 export function setSessionFile(session, fileMeta) {
   session.file = fileMeta;
   session.lastActivityAt = Date.now();

@@ -19,6 +19,7 @@ import {
   sweepExpired,
   setSessionFile,
   clearSessionFile,
+  allSessions,
 } from "./sessionStore.js";
 import { sessionDir, safeUnlink } from "./fileStore.js";
 
@@ -331,7 +332,14 @@ app.get("/api/qr/:id.png", async (req, res) => {
       margin: 1,
     });
     res.setHeader("Content-Type", "image/png");
-    res.send(png);
+    res.setHeader(
+      "Cache-Control",
+      "no-store, no-cache, must-revalidate, proxy-revalidate"
+    );
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Content-Length", String(png.length));
+    res.end(png);
   } catch {
     res.status(500).end();
   }
@@ -340,6 +348,47 @@ app.get("/api/qr/:id.png", async (req, res) => {
 /* ----------------------- Background sweeps ----------------------- */
 // Hard expiry for sessions/files (already deletes stale ones)
 setInterval(() => sweepExpired(), 60 * 1000);
+
+// ---- Liveness sweeper: close when one side is really gone ----
+// ---- Liveness sweeper: close when one side is really gone ----
+const SENDER_GONE_MS = 10000; // sender can refresh without being closed
+const RECEIVER_GONE_MS = 7000; // snappy cleanup on receiver leave
+
+setInterval(() => {
+  try {
+    // Direct call to sessionStore
+    const all = allSessions(); // 👈 place it here
+
+    const now = Date.now();
+    for (const s of all) {
+      if (!s || s.status === "closed") continue;
+
+      // Sender vanished?
+      if (s.lastSeenSender && now - s.lastSeenSender > SENDER_GONE_MS) {
+        try {
+          if (s.file?.path && fs.existsSync(s.file.path))
+            fs.unlinkSync(s.file.path);
+        } catch {}
+        clearSessionFile(s);
+        closeSession(s, "sender_gone");
+        continue;
+      }
+
+      // Receiver vanished?
+      if (s.lastSeenReceiver && now - s.lastSeenReceiver > RECEIVER_GONE_MS) {
+        try {
+          if (s.file?.path && fs.existsSync(s.file.path))
+            fs.unlinkSync(s.file.path);
+        } catch {}
+        clearSessionFile(s);
+        closeSession(s, "receiver_gone");
+        continue;
+      }
+    }
+  } catch (err) {
+    console.error("sweeper error", err);
+  }
+}, 3000);
 
 // (Optional) You could add a liveness sweeper here to close the session if
 // receiver or sender stop heartbeating for X seconds. Not required because
