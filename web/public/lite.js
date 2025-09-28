@@ -76,7 +76,7 @@
           if (j.hasFile && rTok) {
             var dl = el("downloadLink");
             dl.href =
-              "/dl/" + encodeURIComponent(sid) + "/" + encodeURIComponent(rTok);
+              "/dl/" + encodeURIComponent(sid) + "/" + encodeURIComponent(rTok); // path-based
             dl.style.display = "block";
             setStatus(
               "File ready" + (j.file && j.file.name ? ": " + j.file.name : "")
@@ -110,8 +110,7 @@
     else setStatus("Session expired.");
   }
 
-  function createSession(e) {
-    if (e && e.preventDefault) e.preventDefault();
+  function createSession() {
     setStatus("Creating session…");
     xhr("POST", "/api/session", { role: "receiver" }, function (err, x) {
       if (err || !x) {
@@ -134,6 +133,7 @@
       rTok = j.receiverToken;
 
       el("code").innerHTML = j.code;
+      // Use server-made PNG so no client QR library is needed
       el("qr").src = "/api/qr/" + encodeURIComponent(sid) + ".png";
 
       el("sessionBox").style.display = "block";
@@ -146,8 +146,7 @@
     });
   }
 
-  function disconnect(e) {
-    if (e && e.preventDefault) e.preventDefault();
+  function disconnect() {
     if (!sid) return teardown("receiver");
     xhr(
       "POST",
@@ -160,8 +159,14 @@
   }
 
   function ready() {
-    el("startBtn").onclick = createSession;
-    el("disconnectBtn").onclick = disconnect;
+    el("startBtn").onclick = function (e) {
+      e.preventDefault();
+      createSession();
+    };
+    el("disconnectBtn").onclick = function (e) {
+      e.preventDefault();
+      disconnect();
+    };
   }
   if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", ready);

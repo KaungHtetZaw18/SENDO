@@ -1,4 +1,3 @@
-// server/index.js
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -32,9 +31,7 @@ const MAX_FILE_MB = Number(process.env.MAX_FILE_MB || 100);
 const SERVE_WEB = process.env.SERVE_WEB === "true";
 
 app.use(helmet());
-app.use(
-  cors({ origin: FRONTEND_BASE === "same-origin" ? true : FRONTEND_BASE })
-);
+app.use(cors({ origin: FRONTEND_BASE }));
 app.use(express.json());
 app.use(morgan("dev"));
 
@@ -42,30 +39,7 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, name: "Sendo", time: Date.now() });
 });
 
-/* ----------------------- Helpers ----------------------- */
-
-function isEreaderUA(req) {
-  const ua = String(req.headers["user-agent"] || "");
-  return /(Kobo|Kindle|Silk|Tolino|PocketBook|Nook|E-ink|Eink|InkPalm)/i.test(
-    ua
-  );
-}
-function wantsLite(req) {
-  const q = req.query || {};
-  if (q.mode === "lite") return true;
-  if (q.mode === "full") return false;
-  return isEreaderUA(req);
-}
-function baseFromReq(req) {
-  const proto =
-    (req.headers["x-forwarded-proto"] &&
-      String(req.headers["x-forwarded-proto"]).split(",")[0]) ||
-    req.protocol ||
-    "http";
-  const host = req.headers["x-forwarded-host"] || req.headers.host;
-  return host ? `${proto}://${host}` : FRONTEND_BASE;
-}
-
+/* ---------------- Helpers ---------------- */
 async function closeAndCleanup(session) {
   try {
     if (session.file?.path && fs.existsSync(session.file.path)) {
@@ -73,6 +47,20 @@ async function closeAndCleanup(session) {
     }
   } catch {}
   closeSession(session);
+}
+
+function isEreaderUA(req) {
+  const ua = String(req.headers["user-agent"] || "");
+  return /(Kobo|Kindle|Silk|Tolino|PocketBook|Nook|E-ink|Eink|InkPalm)/i.test(
+    ua
+  );
+}
+
+function wantsLite(req) {
+  const q = req.query || {};
+  if (q.mode === "lite") return true;
+  if (q.mode === "full") return false;
+  return isEreaderUA(req);
 }
 
 const ALLOWED_EXTS = new Set([
@@ -88,7 +76,7 @@ function isAllowedEbook(filename) {
   return ALLOWED_EXTS.has(ext);
 }
 
-/* ----------------------- Create Session ----------------------- */
+/* ---------------- Create Session ---------------- */
 app.post("/api/session", async (req, res) => {
   const { role } = req.body || {};
   if (role !== "receiver") {
@@ -100,12 +88,20 @@ app.post("/api/session", async (req, res) => {
   const s = createSession({ ttlSeconds: SESSION_TTL_SECONDS });
   touchSession(s, SESSION_TTL_SECONDS);
 
-  const base = baseFromReq(req);
+  const proto =
+    (req.headers["x-forwarded-proto"] &&
+      String(req.headers["x-forwarded-proto"]).split(",")[0]) ||
+    req.protocol ||
+    "http";
+  const host = req.headers["x-forwarded-host"] || req.headers.host;
+  const originFromReq = host ? `${proto}://${host}` : null;
+
+  const base = originFromReq || FRONTEND_BASE;
+
   const senderLink = `${base}/sender?sessionId=${encodeURIComponent(
     s.id
   )}&t=${encodeURIComponent(s.senderToken)}`;
 
-  // Data-URL QR is fine for modern browsers; lite will use PNG route
   const qrDataUrl = await QRCode.toDataURL(senderLink, { scale: 6, margin: 1 });
 
   return res.json({
@@ -119,7 +115,7 @@ app.post("/api/session", async (req, res) => {
   });
 });
 
-/* ----------------------- Connect (Sender) ----------------------- */
+/* ---------------- Connect (Sender) ---------------- */
 app.post("/api/connect", (req, res) => {
   const { code, sessionId } = req.body || {};
   let s = null;
@@ -144,7 +140,7 @@ app.post("/api/connect", (req, res) => {
   });
 });
 
-/* ----------------------- Status (poll) ----------------------- */
+/* ---------------- Status ---------------- */
 app.get("/api/session/:id/status", (req, res) => {
   const s = getSessionById(req.params.id);
   if (!s) return res.status(404).json({ ok: false, error: "Not found" });
@@ -168,7 +164,7 @@ app.get("/api/session/:id/status", (req, res) => {
   });
 });
 
-/* ----------------------- Multer storage ----------------------- */
+/* ---------------- Multer ---------------- */
 const storage = multer.diskStorage({
   destination: (req, _file, cb) => {
     const sid = req.query.sessionId || req.body.sessionId;
@@ -183,7 +179,7 @@ const upload = multer({
   limits: { fileSize: MAX_FILE_MB * 1024 * 1024 },
 });
 
-/* ----------------------- Upload (Sender) ----------------------- */
+/* ---------------- Upload ---------------- */
 app.post("/api/upload", upload.single("file"), async (req, res) => {
   const { sessionId, senderToken } = req.query || {};
   const s = getSessionById(String(sessionId));
@@ -195,12 +191,16 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
     if (req.file?.path) await safeUnlink(req.file.path);
     return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
-  if (!req.file) return res.status(400).json({ ok: false, error: "No file" });
+  if (!req.file) {
+    return res.status(400).json({ ok: false, error: "No file" });
+  }
+
   if (!isAllowedEbook(req.file.originalname)) {
     if (req.file?.path) await safeUnlink(req.file.path);
     return res.status(415).json({
       ok: false,
-      error: "Only e-book files allowed (.epub .mobi .azw .azw3 .pdf .txt)",
+      error:
+        "Only e-book files are allowed (.epub, .mobi, .azw, .azw3, .pdf, .txt)",
     });
   }
 
@@ -222,15 +222,13 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
   });
 });
 
-// --- PATH-BASED DOWNLOAD (recommended for e-readers) ---
-app.get("/dl/:sessionId/:token", async (req, res) => {
-  const sessionId = String(req.params.sessionId);
-  const token = String(req.params.token);
-
-  const s = getSessionById(sessionId);
+/* ---------------- Download (clean URL, Kobo-safe) ---------------- */
+app.get("/dl/:sessionId/:receiverToken", async (req, res) => {
+  const { sessionId, receiverToken } = req.params;
+  const s = getSessionById(String(sessionId));
   if (!s)
     return res.status(404).json({ ok: false, error: "Session not found" });
-  if (s.receiverToken !== token) {
+  if (s.receiverToken !== receiverToken) {
     return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
   if (!s.file?.path || !fs.existsSync(s.file.path)) {
@@ -238,49 +236,6 @@ app.get("/dl/:sessionId/:token", async (req, res) => {
   }
 
   touchSession(s, SESSION_TTL_SECONDS);
-
-  // Content headers – same window "Save file" prompt
-  res.setHeader("Content-Type", s.file.type || "application/octet-stream");
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename*=UTF-8''${encodeURIComponent(s.file.name)}`
-  );
-
-  // Stream out
-  const stream = fs.createReadStream(s.file.path);
-  stream.pipe(res);
-
-  // ⚠️ Kobo/Kindle are slow: delete a bit later, not immediately.
-  res.on("finish", () => {
-    setTimeout(async () => {
-      try {
-        if (s.file?.path && fs.existsSync(s.file.path)) {
-          await safeUnlink(s.file.path);
-        }
-        clearSessionFile(s);
-        touchSession(s, SESSION_TTL_SECONDS);
-      } catch {}
-    }, 30_000); // 30 seconds grace period
-  });
-});
-
-// --- Existing query-based route kept for compatibility ---
-app.get("/api/download/:sessionId", async (req, res) => {
-  const sessionId = String(req.params.sessionId);
-  const token = String(req.query.receiverToken || "");
-
-  const s = getSessionById(sessionId);
-  if (!s)
-    return res.status(404).json({ ok: false, error: "Session not found" });
-  if (s.receiverToken !== token) {
-    return res.status(401).json({ ok: false, error: "Unauthorized" });
-  }
-  if (!s.file?.path || !fs.existsSync(s.file.path)) {
-    return res.status(404).json({ ok: false, error: "No file" });
-  }
-
-  touchSession(s, SESSION_TTL_SECONDS);
-
   res.setHeader("Content-Type", s.file.type || "application/octet-stream");
   res.setHeader(
     "Content-Disposition",
@@ -290,8 +245,8 @@ app.get("/api/download/:sessionId", async (req, res) => {
   const stream = fs.createReadStream(s.file.path);
   stream.pipe(res);
 
-  // Same grace period here too
   res.on("finish", () => {
+    // Kobo needs time to complete saving → delete after 1 min
     setTimeout(async () => {
       try {
         if (s.file?.path && fs.existsSync(s.file.path)) {
@@ -300,23 +255,25 @@ app.get("/api/download/:sessionId", async (req, res) => {
         clearSessionFile(s);
         touchSession(s, SESSION_TTL_SECONDS);
       } catch {}
-    }, 30_000);
+    }, 60_000);
   });
 });
 
-/* ----------------------- Heartbeat ----------------------- */
+/* ---------------- Heartbeat ---------------- */
 app.post("/api/heartbeat", (req, res) => {
   const { sessionId, role } = req.body || {};
   const s = getSessionById(String(sessionId));
   if (!s) return res.status(404).json({ ok: false, error: "not_found" });
+
   if (s.status === "closed")
     return res.status(410).json({ ok: false, error: "closed" });
+
   touchSession(s, SESSION_TTL_SECONDS);
   if (role === "sender") s.senderConnected = true;
   return res.json({ ok: true, expiresAt: s.expiresAt });
 });
 
-/* ----------------------- Disconnect ----------------------- */
+/* ---------------- Disconnect ---------------- */
 app.post("/api/disconnect", async (req, res) => {
   const { sessionId, by = "sender" } = req.body || {};
   const s = getSessionById(String(sessionId));
@@ -327,34 +284,17 @@ app.post("/api/disconnect", async (req, res) => {
       await safeUnlink(s.file.path);
   } catch {}
   clearSessionFile(s);
+
   closeSession(s, by);
   return res.json({ ok: true });
 });
 
-/* ----------------------- QR as PNG ----------------------- */
-app.get("/api/qr/:id.png", async (req, res) => {
-  const s = getSessionById(req.params.id);
-  if (!s) return res.status(404).end();
-
-  const base = baseFromReq(req);
-  const senderLink = `${base}/sender?sessionId=${encodeURIComponent(
-    s.id
-  )}&t=${encodeURIComponent(s.senderToken)}`;
-
-  res.setHeader("Content-Type", "image/png");
-  await QRCode.toFileStream(res, senderLink, {
-    type: "png",
-    margin: 1,
-    scale: 5,
-  });
-});
-
-/* ----------------------- Sweeper ----------------------- */
+/* ---------------- Sweeper ---------------- */
 setInterval(() => {
   sweepExpired();
 }, 60 * 1000);
 
-/* ----------------------- Serve frontend (Option B) ----------------------- */
+/* ---------------- Serve Frontend ---------------- */
 if (SERVE_WEB) {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
@@ -364,20 +304,18 @@ if (SERVE_WEB) {
 
   app.use(express.static(distDir));
 
-  // Direct access to lite
   app.get(["/lite", "/lite.html"], (_req, res) => res.sendFile(litePath));
 
-  // Smart entry: e-readers -> lite, otherwise React
   app.get("/receiver", (req, res) => {
-    if (wantsLite(req)) return res.redirect(302, "/lite.html");
+    if (wantsLite(req)) return res.sendFile(litePath);
     return res.sendFile(indexPath);
   });
 
-  // Sender + landing: always React
   app.get(["/", "/sender"], (_req, res) => res.sendFile(indexPath));
 
-  // SPA fallback for non-API routes
-  app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(indexPath));
+  app.get(/^\/(?!api\/).*/, (_req, res) => {
+    res.sendFile(indexPath);
+  });
 }
 
 app.listen(PORT, () => {

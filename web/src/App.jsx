@@ -44,14 +44,15 @@ export default function App() {
           <p className="muted text-sm">Ephemeral one-to-one file hand-off</p>
         </header>
 
-        <div className="grid gap-3">
-          <button className="btn" onClick={() => navigate("/receiver")}>
+        <div className="stack gap-3">
+          <a href="/receiver" className="btn">
             I am a Receiver
-          </button>
-          <button className="btn" onClick={() => navigate("/sender")}>
+          </a>
+          <a href="/sender" className="btn">
             I am a Sender
-          </button>
+          </a>
         </div>
+
         <InfoNote />
         <Footer />
       </div>

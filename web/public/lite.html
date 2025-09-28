@@ -41,6 +41,7 @@
         text-align: center;
         margin-bottom: 8px;
       }
+
       .box {
         border: 1px solid var(--border);
         border-radius: 8px;
@@ -62,6 +63,7 @@
         font-size: 20px;
         letter-spacing: 3px;
       }
+
       #qr {
         display: block;
         width: 160px;
@@ -69,28 +71,35 @@
         margin: 8px auto;
         border: 1px solid var(--border);
       }
+
       .btn {
         display: block;
         width: 100%;
-        padding: 8px 10px;
+        margin: 6px 0;
+        padding: 12px;
         text-align: center;
-        font-weight: 700;
         font-size: 14px;
-        color: var(--ink);
+        font-weight: 700;
+        color: #000;
         background: #fff;
-        border: 1px solid var(--ink);
+        border: 2px solid #000;
         border-radius: 8px;
         text-decoration: none;
       }
-      .btn.ghost {
-        border-color: var(--border);
+      .btn:active {
+        background: #eee;
       }
+      .btn.ghost {
+        border-color: #bbb;
+      }
+
       #sessionBox {
         display: none;
       }
       #downloadLink {
         display: none;
       }
+
       .footer {
         text-align: center;
         color: var(--muted);
@@ -106,14 +115,10 @@
 
       <div class="box">
         <div class="row">
-          <a id="startBtn" href="#" class="btn">Start as Receiver</a>
-          <a
-            id="disconnectBtn"
-            href="#"
-            class="btn ghost"
-            style="display: none; margin-top: 6px"
-            >Disconnect</a
-          >
+          <button id="startBtn" class="btn">Start as Receiver</button>
+          <button id="disconnectBtn" class="btn ghost" style="display: none">
+            Disconnect
+          </button>
         </div>
 
         <div id="sessionBox">
@@ -124,7 +129,7 @@
 
           <img id="qr" alt="QR code" />
 
-          <!-- Plain link (same tab) to path-based URL /dl/:sessionId/:token -->
+          <!-- Clean, path-based download URL for e-readers -->
           <div class="row">
             <a id="downloadLink" class="btn" href="#" rel="noopener"
               >Download file</a
