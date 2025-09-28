@@ -1,7 +1,8 @@
 (function () {
+  // Keep relative to same origin
   var API = "";
 
-  // ----- helpers -----
+  // ---------- tiny helpers ----------
   function $(id) {
     return document.getElementById(id);
   }
@@ -30,29 +31,19 @@
     }
   }
 
-  // ----- state -----
+  // ---------- state ----------
   var sessionId = null;
   var receiverToken = null;
   var hbTimer = null;
   var pollTimer = null;
   var beaconSent = false;
-  var redirecting = false;
+  var paused = false;
 
-  function safeGoHome(reason) {
-    if (redirecting) return;
-    redirecting = true;
-    setDebug(reason || "");
-    // small delay lets user read the line on e-ink
-    setTimeout(function () {
-      location.replace("/");
-    }, 700);
-  }
-
-  // ----- heartbeat -----
+  // ---------- heartbeat ----------
   function startHeartbeat() {
     stopHeartbeat();
     hbTimer = setInterval(function () {
-      if (!sessionId) return;
+      if (!sessionId || paused) return;
       xhr(
         "POST",
         "/api/heartbeat",
@@ -68,31 +59,23 @@
     }
   }
 
-  // ----- polling -----
+  // ---------- polling ----------
   function startPoll() {
     stopPoll();
     pollTimer = setInterval(function () {
-      if (!sessionId) return;
-
+      if (!sessionId || paused) return;
       xhr(
         "GET",
         "/api/session/" + encodeURIComponent(sessionId) + "/status",
         null,
         function (err, x) {
-          if (err || !x) return;
-
-          // Definite disconnects → go home
-          if (x.status === 404 || x.status === 410) {
-            safeGoHome("session missing/closed (" + x.status + ")");
-            return;
-          }
-
-          // Transient errors: stay and retry
+          if (err || !x) return; // transient network hiccup -> ignore; next tick will retry
           if (x.status !== 200) {
-            setDebug("temporary " + x.status + " on /status");
+            // session vanished/closed
+            teardown("bad_status_" + x.status);
+            location.replace("/");
             return;
           }
-
           var json;
           try {
             json = JSON.parse(x.responseText);
@@ -100,16 +83,13 @@
             return;
           }
 
-          // Server says closed or TTL up
-          if (
-            json.closed ||
-            (typeof json.secondsLeft === "number" && json.secondsLeft <= 0)
-          ) {
-            safeGoHome("session closed (" + (json.closedBy || "ttl") + ")");
+          if (!json || json.closed || json.status === "closed") {
+            teardown("closed");
+            location.replace("/");
             return;
           }
 
-          // Normal UI updates
+          // File ready -> show download link
           if (json.hasFile && receiverToken) {
             var href =
               "/api/download/" +
@@ -129,11 +109,12 @@
           } else {
             var b = $("downloadBtn");
             if (b) b.style.display = "none";
+            // If sender connected show different text; else waiting…
             setText(
               "status",
               json.senderConnected
                 ? "Connected. Waiting for Sender to upload…"
-                : "Waiting for Sender to join…"
+                : "Waiting for Sender to connect…"
             );
           }
         }
@@ -147,7 +128,7 @@
     }
   }
 
-  // ----- teardown -----
+  // ---------- teardown ----------
   function teardown() {
     stopHeartbeat();
     stopPoll();
@@ -156,63 +137,66 @@
     setText("status", "");
   }
 
-  // ----- disconnect beacon -----
-  function sendBeaconDisconnect() {
+  // ---------- disconnect beacon ----------
+  function sendBeaconDisconnect(by) {
     try {
       if (beaconSent) return;
       if (!sessionId || !navigator.sendBeacon) return;
       beaconSent = true;
-      var data = JSON.stringify({ sessionId: sessionId, by: "receiver" });
+      var data = JSON.stringify({ sessionId: sessionId, by: by || "receiver" });
       navigator.sendBeacon(
         "/api/disconnect",
         new Blob([data], { type: "application/json" })
       );
     } catch {}
   }
-  window.addEventListener("pagehide", sendBeaconDisconnect, { capture: true });
-  window.addEventListener("beforeunload", sendBeaconDisconnect, {
-    capture: true,
-  });
+  window.addEventListener(
+    "pagehide",
+    function () {
+      sendBeaconDisconnect("receiver");
+    },
+    { capture: true }
+  );
+  window.addEventListener(
+    "beforeunload",
+    function () {
+      sendBeaconDisconnect("receiver");
+    },
+    { capture: true }
+  );
   window.addEventListener("offline", function () {
-    setDebug("offline");
-    safeGoHome("offline");
+    sendBeaconDisconnect("receiver");
   });
 
-  // ----- init (SSR-aware) -----
-  function init() {
-    // If server pre-created a session (SSR receiver), use it
-    if (window.__SESS_ID__) {
-      sessionId = String(window.__SESS_ID__ || "");
-      receiverToken = String(window.__RECV_TOKEN__ || "");
-      // nudge QR to bypass cache on e-ink
-      var qre = $("qr");
-      if (qre && qre.src) qre.src = qre.src.split("?")[0] + "?v=" + Date.now();
-      startHeartbeat();
-      startPoll();
-      return;
-    }
-    createSessionCompat();
-  }
+  // Pause timers when hidden (saves battery/memory on e-ink)
+  document.addEventListener("visibilitychange", function () {
+    paused = document.hidden;
+  });
 
-  // ----- create session (GET-first for very old engines) -----
+  // ---------- session creation (GET-first; fallback to POST) ----------
   function createSessionCompat() {
     setText("status", "Creating session…");
     setDebug("");
 
+    // 1) GET first (older engines)
     xhr("GET", "/api/session/new?v=" + Date.now(), null, function (err, x) {
       if (!err && x && x.status === 200) {
         handleSessionResponse(x);
         return;
       }
-      if (x) setDebug("GET /api/session/new " + x.status + ", trying POST…");
+      if (x)
+        setDebug(
+          "GET /api/session/new failed (" + x.status + "). Trying POST…"
+        );
 
+      // 2) POST fallback
       xhr("POST", "/api/session", { role: "receiver" }, function (err2, x2) {
         if (!err2 && x2 && x2.status === 200) {
           handleSessionResponse(x2);
           return;
         }
         setText("status", "Failed to create session.");
-        if (x2) setDebug("POST /api/session " + x2.status);
+        if (x2) setDebug("POST /api/session failed (" + x2.status + ")");
       });
     });
   }
@@ -234,9 +218,10 @@
     sessionId = json.sessionId;
     receiverToken = json.receiverToken;
 
+    // show 4-char code
     setText("code", json.code || "----");
 
-    // Robust QR loading (cache-bust + one retry)
+    // robust QR load (server generates /api/qr/:id.png that encodes /join)
     var qre = $("qr");
     if (qre) {
       var tried = 0;
@@ -244,9 +229,9 @@
         qre.onerror = function () {
           if (tried < 1) {
             tried++;
-            qre.removeAttribute("src");
+            qre.removeAttribute("src"); // reflow for some Kobo builds
             setTimeout(setQR, 400);
-          } else setDebug("QR failed to load.");
+          } else setDebug("QR image failed to load.");
         };
         qre.src =
           "/api/qr/" + encodeURIComponent(sessionId) + ".png?v=" + Date.now();
@@ -254,12 +239,33 @@
       setQR();
     }
 
-    setText("status", "Waiting for Sender to join…");
+    setText("status", "Waiting for Sender to connect…");
     startHeartbeat();
     startPoll();
   }
 
-  if (document.readyState === "loading")
+  // ---------- init ----------
+  function init() {
+    // If SSR created a session already, use it
+    if (window.__SESS_ID__) {
+      sessionId = String(window.__SESS_ID__ || "");
+      receiverToken = String(window.__RECV_TOKEN__ || "");
+      // refresh QR src once to avoid stale cache on e-ink
+      var qre = $("qr");
+      if (qre && qre.src) qre.src = qre.src.split("?")[0] + "?v=" + Date.now();
+
+      setText("status", "Waiting for Sender to connect…");
+      startHeartbeat();
+      startPoll();
+      return;
+    }
+    // else create a session client-side
+    createSessionCompat();
+  }
+
+  if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
-  else init();
+  } else {
+    init();
+  }
 })();

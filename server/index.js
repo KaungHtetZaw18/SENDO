@@ -25,24 +25,51 @@ import { sessionDir, safeUnlink } from "./fileStore.js";
 
 dotenv.config();
 
+// ---------- App & constants ----------
 const app = express();
 const PORT = process.env.PORT || 3001;
 const SESSION_TTL_SECONDS = Number(process.env.SESSION_TTL_SECONDS || 300);
 const MAX_FILE_MB = Number(process.env.MAX_FILE_MB || 100);
 
-/* ----------------------- Middleware ----------------------- */
-// Single-app deployment: open CORS is fine. If you split sender/receiver origins, restrict this.
+// liveness thresholds (balanced to avoid chattiness/memory churn)
+const SENDER_GONE_MS = 15000;
+const RECEIVER_GONE_MS = 12000;
+
+// ---------- Middleware ----------
 app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: false }));
 app.use(morgan("dev"));
 
+// Small helper to set no-cache headers consistently
+function setNoCache(res) {
+  res.setHeader(
+    "Cache-Control",
+    "no-store, no-cache, must-revalidate, proxy-revalidate"
+  );
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+}
+
+// Where am I?
+function requestOrigin(req) {
+  const proto =
+    (req.headers["x-forwarded-proto"] &&
+      String(req.headers["x-forwarded-proto"]).split(",")[0]) ||
+    req.protocol ||
+    "http";
+  const host = req.headers["x-forwarded-host"] || req.headers.host;
+  return host ? `${proto}://${host}` : "";
+}
+
+// ---------- Health ----------
 app.get("/api/health", (_req, res) => {
+  setNoCache(res);
   res.json({ ok: true, name: "Sendo", time: Date.now() });
 });
 
-/* ----------------------- Helpers ----------------------- */
+// ---------- Ebook allowlist ----------
 const ALLOWED_EXTS = new Set([
   ".epub",
   ".mobi",
@@ -55,17 +82,8 @@ function isAllowedEbook(filename) {
   const ext = (path.extname(filename) || "").toLowerCase();
   return ALLOWED_EXTS.has(ext);
 }
-function requestOrigin(req) {
-  const proto =
-    (req.headers["x-forwarded-proto"] &&
-      String(req.headers["x-forwarded-proto"]).split(",")[0]) ||
-    req.protocol ||
-    "http";
-  const host = req.headers["x-forwarded-host"] || req.headers.host;
-  return host ? `${proto}://${host}` : "";
-}
 
-/* ----------------------- Create session ----------------------- */
+// ---------- Session creation (Receiver) ----------
 app.post("/api/session", async (req, res) => {
   const { role } = req.body || {};
   if (role !== "receiver") {
@@ -73,60 +91,52 @@ app.post("/api/session", async (req, res) => {
       .status(400)
       .json({ ok: false, error: "role must be 'receiver'" });
   }
-
   const s = createSession({ ttlSeconds: SESSION_TTL_SECONDS });
-  // Track last-seen for optional liveness decisions
+  s.lastSeenReceiver = Date.now();
+  s.lastSeenSender = 0;
+  touchSession(s, SESSION_TTL_SECONDS);
+
+  // QR will point to /join so scanning connects Sender immediately
+  const origin = requestOrigin(req);
+  const joinUrl = `${origin}/join?sessionId=${encodeURIComponent(
+    s.id
+  )}&t=${encodeURIComponent(s.senderToken)}`;
+
+  setNoCache(res);
+  res.json({
+    ok: true,
+    sessionId: s.id,
+    code: s.code,
+    receiverToken: s.receiverToken,
+    joinUrl,
+    expiresAt: s.expiresAt,
+  });
+});
+
+// GET-first creation for very old browsers (same payload)
+app.get("/api/session/new", async (req, res) => {
+  const s = createSession({ ttlSeconds: SESSION_TTL_SECONDS });
   s.lastSeenReceiver = Date.now();
   s.lastSeenSender = 0;
   touchSession(s, SESSION_TTL_SECONDS);
 
   const origin = requestOrigin(req);
-  const senderLink = `${origin}/sender?sessionId=${encodeURIComponent(
+  const joinUrl = `${origin}/join?sessionId=${encodeURIComponent(
     s.id
   )}&t=${encodeURIComponent(s.senderToken)}`;
-  const qrDataUrl = await QRCode.toDataURL(senderLink, { scale: 6, margin: 1 });
 
+  setNoCache(res);
   res.json({
     ok: true,
     sessionId: s.id,
     code: s.code,
     receiverToken: s.receiverToken,
-    senderLink,
-    qrDataUrl,
+    joinUrl,
     expiresAt: s.expiresAt,
   });
 });
 
-// GET /api/session/new  -> create a receiver session (same payload as POST /api/session)
-app.get("/api/session/new", async (req, res) => {
-  const s = createSession({ ttlSeconds: SESSION_TTL_SECONDS });
-  touchSession(s, SESSION_TTL_SECONDS);
-
-  const proto =
-    (req.headers["x-forwarded-proto"] &&
-      String(req.headers["x-forwarded-proto"]).split(",")[0]) ||
-    req.protocol ||
-    "http";
-  const host = req.headers["x-forwarded-host"] || req.headers.host;
-  const origin = host ? `${proto}://${host}` : "";
-
-  const senderLink = `${origin}/sender?sessionId=${encodeURIComponent(
-    s.id
-  )}&t=${encodeURIComponent(s.senderToken)}`;
-  const qrDataUrl = await QRCode.toDataURL(senderLink, { scale: 6, margin: 1 });
-
-  res.json({
-    ok: true,
-    sessionId: s.id,
-    code: s.code,
-    receiverToken: s.receiverToken,
-    senderLink,
-    qrDataUrl,
-    expiresAt: s.expiresAt,
-  });
-});
-
-/* ----------------------- Sender connect ----------------------- */
+// ---------- Sender "connect" by code (keyboard entry) ----------
 app.post("/api/connect", (req, res) => {
   const { code, sessionId } = req.body || {};
   let s = null;
@@ -134,14 +144,15 @@ app.post("/api/connect", (req, res) => {
   if (!s && sessionId) s = getSessionById(String(sessionId));
   if (!s)
     return res.status(404).json({ ok: false, error: "Session not found" });
-  if (s.expiresAt <= Date.now() || s.status === "closed")
+  if (s.expiresAt <= Date.now() || s.status === "closed") {
     return res.status(410).json({ ok: false, error: "Expired/closed" });
-
+  }
   s.senderConnected = true;
   s.lastSeenSender = Date.now();
   s.status = "connected";
   touchSession(s, SESSION_TTL_SECONDS);
 
+  setNoCache(res);
   res.json({
     ok: true,
     sessionId: s.id,
@@ -150,15 +161,51 @@ app.post("/api/connect", (req, res) => {
   });
 });
 
-/* ----------------------- Status (polling) ----------------------- */
+// ---------- Sender "connect" by QR (scan) ----------
+// This is the new path embedded in the QR. Opening it marks sender connected
+// and forwards to the sender UI with session info in the URL for the client JS.
+app.get("/join", (req, res) => {
+  const sid = String(req.query.sessionId || "");
+  const tok = String(req.query.t || "");
+  const s = getSessionById(sid);
+
+  if (!s) {
+    setNoCache(res);
+    return res.redirect("/?e=not_found");
+  }
+  if (s.senderToken !== tok) {
+    setNoCache(res);
+    return res.redirect("/?e=bad_token");
+  }
+  if (s.status === "closed" || s.expiresAt <= Date.now()) {
+    setNoCache(res);
+    return res.redirect("/?e=expired");
+  }
+
+  // mark connected
+  s.senderConnected = true;
+  s.lastSeenSender = Date.now();
+  s.status = "connected";
+  touchSession(s, SESSION_TTL_SECONDS);
+
+  // forward into sender page (client JS will pick these up from query)
+  setNoCache(res);
+  res.redirect(
+    `/sender?sessionId=${encodeURIComponent(s.id)}&t=${encodeURIComponent(
+      s.senderToken
+    )}`
+  );
+});
+
+// ---------- Status (polled by both sides) ----------
 app.get("/api/session/:id/status", (req, res) => {
   const s = getSessionById(String(req.params.id));
   if (!s) return res.status(404).json({ ok: false, error: "Not found" });
 
   const now = Date.now();
   const closed = s.status === "closed" || s.expiresAt <= now;
-  const secondsLeft = Math.max(0, Math.floor((s.expiresAt - now) / 1000));
 
+  setNoCache(res);
   res.json({
     ok: true,
     closed,
@@ -169,12 +216,12 @@ app.get("/api/session/:id/status", (req, res) => {
       ? { name: s.file.name, size: s.file.size, type: s.file.type }
       : null,
     expiresAt: s.expiresAt,
-    secondsLeft,
+    secondsLeft: Math.max(0, Math.floor((s.expiresAt - now) / 1000)),
     senderConnected: s.senderConnected,
   });
 });
 
-/* ----------------------- Upload ----------------------- */
+// ---------- Upload (Sender) ----------
 const storage = multer.diskStorage({
   destination: (req, _file, cb) => {
     const sid = req.query.sessionId || req.body.sessionId;
@@ -202,10 +249,12 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ ok: false, error: "No file" });
   if (!isAllowedEbook(req.file.originalname)) {
     if (req.file?.path) await safeUnlink(req.file.path);
-    return res.status(415).json({
-      ok: false,
-      error: "Only .epub .mobi .azw .azw3 .pdf .txt are allowed",
-    });
+    return res
+      .status(415)
+      .json({
+        ok: false,
+        error: "Only .epub .mobi .azw .azw3 .pdf .txt are allowed",
+      });
   }
 
   // Single-file rule: replace previous file
@@ -221,13 +270,14 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
   setSessionFile(s, meta);
   touchSession(s, SESSION_TTL_SECONDS);
 
+  setNoCache(res);
   res.json({
     ok: true,
     file: { name: meta.name, size: meta.size, type: meta.type },
   });
 });
 
-/* ----------------------- Download (delete after success) ----------------------- */
+// ---------- Download (Receiver) ----------
 app.get("/api/download/:sessionId", async (req, res) => {
   const s = getSessionById(String(req.params.sessionId));
   if (!s)
@@ -237,51 +287,48 @@ app.get("/api/download/:sessionId", async (req, res) => {
   if (token !== s.receiverToken)
     return res.status(401).json({ ok: false, error: "Unauthorized" });
 
-  if (!s.file?.path || !fs.existsSync(s.file.path))
+  if (!s.file?.path || !fs.existsSync(s.file.path)) {
     return res.status(404).json({ ok: false, error: "No file" });
+  }
 
   try {
     const stat = fs.statSync(s.file.path);
-    const asciiFallback = s.file.name.replace(/[^\x20-\x7E]+/g, "_");
+    const ascii = s.file.name.replace(/[^\x20-\x7E]+/g, "_");
 
+    // No cache + content headers
+    setNoCache(res);
     res.setHeader("Content-Type", s.file.type || "application/octet-stream");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(
+      `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(
         s.file.name
       )}`
     );
     res.setHeader("Content-Length", String(stat.size));
-    res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Pragma", "no-cache");
     res.setHeader("Accept-Ranges", "none");
     res.setHeader("Connection", "close");
 
     const stream = fs.createReadStream(s.file.path);
     stream.pipe(res);
 
-    // Delete only after successful transfer (+ grace)
+    // After successful transfer, free disk + keep session open for a bit
     res.once("finish", async () => {
       try {
-        setTimeout(async () => {
-          if (fs.existsSync(s.file.path)) await safeUnlink(s.file.path);
-          clearSessionFile(s);
-          touchSession(s, SESSION_TTL_SECONDS);
-        }, 1500);
+        await safeUnlink(s.file.path);
       } catch {}
+      clearSessionFile(s);
+      touchSession(s, SESSION_TTL_SECONDS);
     });
 
-    // If client aborts, keep file for retry
+    // keep file if user aborted (so they can retry)
     res.once("close", () => {});
-
-    touchSession(s, SESSION_TTL_SECONDS);
   } catch (err) {
     console.error("download error:", err);
     res.status(500).json({ ok: false, error: "server_error" });
   }
 });
 
-/* ----------------------- Heartbeat & Disconnect ----------------------- */
+// ---------- Heartbeat & Disconnect ----------
 app.post("/api/heartbeat", (req, res) => {
   const { sessionId, role } = req.body || {};
   const s = getSessionById(String(sessionId));
@@ -289,15 +336,15 @@ app.post("/api/heartbeat", (req, res) => {
   if (s.status === "closed")
     return res.status(410).json({ ok: false, error: "closed" });
 
-  // Record liveness (handy if later you want a tighter idle sweeper)
   const now = Date.now();
   if (role === "receiver") s.lastSeenReceiver = now;
   if (role === "sender") {
     s.lastSeenSender = now;
     s.senderConnected = true;
   }
-
   touchSession(s, SESSION_TTL_SECONDS);
+
+  setNoCache(res);
   res.json({ ok: true, expiresAt: s.expiresAt });
 });
 
@@ -311,33 +358,29 @@ app.post("/api/disconnect", async (req, res) => {
       await safeUnlink(s.file.path);
   } catch {}
   clearSessionFile(s);
-  closeSession(s, by); // sets status=closed and closedBy=by
+  closeSession(s, by); // 'sender' | 'receiver'
+  setNoCache(res);
   res.json({ ok: true });
 });
 
-/* ----------------------- QR as PNG (works on e-readers) ----------------------- */
+// ---------- QR (PNG) that encodes /join ----------
 app.get("/api/qr/:id.png", async (req, res) => {
   const s = getSessionById(String(req.params.id));
   if (!s) return res.status(404).end();
 
   const origin = requestOrigin(req);
-  const senderLink = `${origin}/sender?sessionId=${encodeURIComponent(
+  const joinUrl = `${origin}/join?sessionId=${encodeURIComponent(
     s.id
   )}&t=${encodeURIComponent(s.senderToken)}`;
 
   try {
-    const png = await QRCode.toBuffer(senderLink, {
+    const png = await QRCode.toBuffer(joinUrl, {
       type: "png",
       scale: 6,
       margin: 1,
     });
+    setNoCache(res);
     res.setHeader("Content-Type", "image/png");
-    res.setHeader(
-      "Cache-Control",
-      "no-store, no-cache, must-revalidate, proxy-revalidate"
-    );
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
     res.setHeader("Content-Length", String(png.length));
     res.end(png);
   } catch {
@@ -345,25 +388,16 @@ app.get("/api/qr/:id.png", async (req, res) => {
   }
 });
 
-/* ----------------------- Background sweeps ----------------------- */
-// Hard expiry for sessions/files (already deletes stale ones)
-setInterval(() => sweepExpired(), 60 * 1000);
-
-// ---- Liveness sweeper: close when one side is really gone ----
-// ---- Liveness sweeper: close when one side is really gone ----
-const SENDER_GONE_MS = 180000; // 3 min
-const RECEIVER_GONE_MS = 180000; // 3 min
-
+// ---------- Background sweeps (TTL + liveness) ----------
 setInterval(() => {
   try {
-    // Direct call to sessionStore
-    const all = allSessions(); // 👈 place it here
+    sweepExpired(); // closes expired sessions (kept briefly as tombstones)
 
     const now = Date.now();
-    for (const s of all) {
+    for (const s of allSessions()) {
       if (!s || s.status === "closed") continue;
 
-      // Sender vanished?
+      // sender gone?
       if (s.lastSeenSender && now - s.lastSeenSender > SENDER_GONE_MS) {
         try {
           if (s.file?.path && fs.existsSync(s.file.path))
@@ -373,8 +407,7 @@ setInterval(() => {
         closeSession(s, "sender_gone");
         continue;
       }
-
-      // Receiver vanished?
+      // receiver gone?
       if (s.lastSeenReceiver && now - s.lastSeenReceiver > RECEIVER_GONE_MS) {
         try {
           if (s.file?.path && fs.existsSync(s.file.path))
@@ -385,68 +418,34 @@ setInterval(() => {
         continue;
       }
     }
-  } catch (err) {
-    console.error("sweeper error", err);
+  } catch (e) {
+    // swallow; keep memory stable
   }
-}, 3000);
+}, 5000);
 
-// (Optional) You could add a liveness sweeper here to close the session if
-// receiver or sender stop heartbeating for X seconds. Not required because
-// receiver already sends a 'disconnect' beacon on leave, and TTL handles the rest.
-
-/* ----------------------- Serve frontend (plain files) ----------------------- */
-// Serve static frontend (no React build — plain files)
-// Serve static frontend (plain files) with no-cache (important for e-readers)
+// ---------- Static (no cache) ----------
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.resolve(__dirname, "../web/public");
 
 app.use(
   express.static(publicDir, {
-    setHeaders: (res) => {
-      res.setHeader(
-        "Cache-Control",
-        "no-store, no-cache, must-revalidate, proxy-revalidate"
-      );
-      res.setHeader("Pragma", "no-cache");
-      res.setHeader("Expires", "0");
-    },
+    setHeaders: (res) => setNoCache(res),
   })
 );
 
-// --- SSR Receiver (Kobo/Kindle safe) ---
+// ---------- SSR Receiver (e-ink safe) ----------
 app.get("/receiver", async (req, res) => {
   try {
     const s = createSession({ ttlSeconds: SESSION_TTL_SECONDS });
-    // seed liveness times
     s.lastSeenReceiver = Date.now();
     s.lastSeenSender = 0;
     touchSession(s, SESSION_TTL_SECONDS);
 
     const origin = requestOrigin(req);
-    const senderLink = `${origin}/sender?sessionId=${encodeURIComponent(
-      s.id
-    )}&t=${encodeURIComponent(s.senderToken)}`;
-
-    // Precompute a PNG buffer; some devices render it more reliably than a data URL
-    const png = await QRCode.toBuffer(senderLink, {
-      type: "png",
-      scale: 6,
-      margin: 1,
-    });
-
-    // Send HTML that already contains the code and a QR <img> via a one-time URL
-    // We’ll expose the PNG via a short-lived endpoint to avoid base64 bloat in HTML.
     const qrPath = `/api/qr/${encodeURIComponent(s.id)}.png?v=${Date.now()}`;
 
-    res.setHeader(
-      "Cache-Control",
-      "no-store, no-cache, must-revalidate, proxy-revalidate"
-    );
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
-
-    // Minimal HTML: plain black text, big code, QR, + your lite.js enhancement at the bottom
+    setNoCache(res);
     res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -456,22 +455,20 @@ app.get("/receiver", async (req, res) => {
 <meta http-equiv="Cache-Control" content="no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <style>
-  :root { --ink:#000; --muted:#444; --border:#888; --paper:#fff; }
-  *,*::before,*::after{ box-sizing:border-box; }
-  html,body{ margin:0; padding:0; background:var(--paper); color:var(--ink);
-             font-family:-apple-system, system-ui, Segoe UI, Roboto, Arial, sans-serif;}
-  h1{ text-align:center; font-size:22px; margin:14px 0 2px;}
-  .sub{ text-align:center; color:var(--muted); font-size:12px; margin-bottom:10px;}
-  .wrap{ max-width:480px; margin:0 auto 24px; padding:0 10px;}
-  .card{ background:var(--paper); border:1px solid var(--border); border-radius:10px; padding:12px; text-align:center;}
-  .key{ letter-spacing:8px; font-family:ui-monospace, Menlo, Consolas, monospace;
-        font-size:22px; border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-bottom:10px;}
-  #qr{ display:block; width:180px; height:180px; margin:10px auto 0; border:1px solid var(--border); border-radius:6px;}
-  .btn{ display:block; width:100%; padding:12px 14px; border:1px solid var(--border); border-radius:10px;
-        background:#eee; color:#000; font-weight:700; text-decoration:none; margin-top:12px;}
-  #status{ text-align:center; color:var(--ink); font-size:12px; margin-top:8px; min-height:1em;}
-  #debug{ text-align:center; color:#b00; font-size:12px; margin-top:6px; min-height:1em;}
-  footer{ text-align:center; font-size:12px; color:var(--ink); margin-top:14px;}
+:root { --ink:#000; --muted:#444; --border:#888; --paper:#fff; }
+*,*::before,*::after{ box-sizing:border-box; }
+html,body{ margin:0; padding:0; background:#fff; color:#000;
+  font-family:-apple-system, system-ui, Segoe UI, Roboto, Arial, sans-serif; }
+.wrap{ max-width:480px; margin:0 auto 24px; padding:0 10px; }
+h1{ text-align:center; font-size:22px; margin:14px 0 2px; }
+.sub{ text-align:center; color:#444; font-size:12px; margin-bottom:10px; }
+.card{ background:#fff; border:1px solid #888; border-radius:10px; padding:12px; text-align:center; }
+.key{ letter-spacing:8px; font-family:ui-monospace, Menlo, Consolas, monospace; font-size:22px; border:1px solid #888; border-radius:8px; padding:8px 10px; margin-bottom:10px;}
+#qr{ display:block; width:180px; height:180px; margin:10px auto 0; border:1px solid #888; border-radius:6px;}
+.btn{ display:block; width:100%; padding:12px 14px; border:1px solid #888; border-radius:10px; background:#eee; color:#000; font-weight:700; text-decoration:none; margin-top:12px;}
+#status,#debug{ text-align:center; font-size:12px; margin-top:8px; min-height:1em; }
+#debug{ color:#b00; }
+footer{ text-align:center; font-size:12px; color:#000; margin-top:14px; }
 </style>
 </head>
 <body>
@@ -488,7 +485,7 @@ app.get("/receiver", async (req, res) => {
     <footer>Created by <strong>Kaung</strong> • © 2025 Sendo</footer>
   </div>
   <script>
-    // Expose the session and receiver token so lite.js can attach and enhance
+    // Let lite.js enhance without having to create a session again
     window.__SESS_ID__ = ${JSON.stringify(s.id)};
     window.__RECV_TOKEN__ = ${JSON.stringify(s.receiverToken)};
   </script>
@@ -500,11 +497,16 @@ app.get("/receiver", async (req, res) => {
     res.status(500).send("Receiver is temporarily unavailable.");
   }
 });
+
+// ---------- Sender (static) ----------
 app.get("/sender", (_req, res) =>
   res.sendFile(path.join(publicDir, "sender.html"))
 );
+
+// ---------- Landing ----------
 app.get("/", (_req, res) => res.sendFile(path.join(publicDir, "index.html")));
-/* ----------------------- Start ----------------------- */
+
+// ---------- Start ----------
 app.listen(PORT, () => {
   console.log(`Sendo server listening on :${PORT}`);
 });

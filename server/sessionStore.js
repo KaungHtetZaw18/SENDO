@@ -1,17 +1,20 @@
-import { customAlphabet } from "nanoid";
+// server/sessionStore.js
 import crypto from "crypto";
-// Public 4-char code (no 0,1,O,I)
+import { customAlphabet } from "nanoid";
+
+// Public 4-char code (no 0,1,O,I to avoid confusion)
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const genCode = customAlphabet(CODE_ALPHABET, 4);
 
 const sessionsById = new Map();
 const sessionsByCode = new Map();
 
-// keep closed sessions around briefly so UIs can learn who closed it
+// Keep closed sessions around briefly so UIs can read closedBy
 const TOMBSTONE_MS = 2 * 60 * 1000; // 2 minutes
 
-export function createSession({ ttlSeconds = 300 }) {
+export function createSession({ ttlSeconds = 300 } = {}) {
   const id = crypto.randomUUID();
+
   let code = genCode();
   while (sessionsByCode.has(code)) code = genCode();
 
@@ -21,13 +24,20 @@ export function createSession({ ttlSeconds = 300 }) {
     code,
     receiverToken: crypto.randomUUID(),
     senderToken: crypto.randomUUID(),
+
     status: "waiting", // 'waiting' | 'connected' | 'closed'
-    closedBy: null, // 'sender' | 'receiver' | 'ttl'
+    closedBy: null, // 'sender' | 'receiver' | 'ttl' | 'sender_gone' | 'receiver_gone'
     closedAt: null,
-    file: undefined,
+
+    file: undefined, // { name, size, type, path, uploadedAt }
+
     createdAt: now,
     lastActivityAt: now,
     expiresAt: now + ttlSeconds * 1000,
+
+    // liveness (used by sweeper)
+    lastSeenReceiver: 0,
+    lastSeenSender: 0,
     senderConnected: false,
   };
 
@@ -51,7 +61,7 @@ export function touchSession(session, ttlSeconds) {
   if (ttlSeconds) session.expiresAt = now + ttlSeconds * 1000;
 }
 
-// Mark closed (keep as tombstone)
+// Mark closed (kept as tombstone for a bit)
 export function closeSession(session, closedBy = "ttl") {
   session.status = "closed";
   session.closedBy = closedBy;
@@ -80,8 +90,9 @@ export function sweepExpired() {
   }
 }
 
+// ✅ Correct implementation (your previous file referenced a non-existent SESSIONS)
 export function allSessions() {
-  return Array.from(sessionsById.values()); // ✅ fix map name
+  return Array.from(sessionsById.values());
 }
 
 export function setSessionFile(session, fileMeta) {
