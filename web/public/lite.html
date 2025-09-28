@@ -8,8 +8,8 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <style>
       :root {
-        --ink: #000; /* force black for e-ink */
-        --muted: #444; /* dark grey only */
+        --ink: #000;
+        --muted: #444;
         --border: #888;
         --paper: #fff;
       }
@@ -18,7 +18,6 @@
       *::after {
         box-sizing: border-box;
       }
-
       html,
       body {
         margin: 0;
@@ -88,8 +87,8 @@
         border: 1px solid var(--border);
         border-radius: 10px;
         background: #eee;
-        color: #000; /* force black text */
-        font-weight: 700; /* bold for e-ink visibility */
+        color: #000;
+        font-weight: 700;
         text-decoration: none;
         margin-top: 12px;
         cursor: pointer;
@@ -106,6 +105,13 @@
         color: var(--ink);
         font-size: 12px;
         margin-top: 8px;
+        min-height: 1em;
+      }
+      #debug {
+        text-align: center;
+        color: #b00;
+        font-size: 12px;
+        margin-top: 6px;
         min-height: 1em;
       }
 
@@ -129,11 +135,15 @@
           >Download file</a
         >
         <div id="status"></div>
+        <div id="debug"></div>
+        <!-- 👈 visible debug line on device -->
       </div>
 
       <footer>Created by <strong>Kaung</strong> • © 2025 Sendo</footer>
     </div>
 
-    <script src="/lite.js?v=7"></script>
+    <!-- IMPORTANT: no 'defer'; old e-readers sometimes skip deferred scripts.
+         Keep this EXACTLY at the end of <body>. -->
+    <script src="/lite.js?v=8" type="text/javascript"></script>
   </body>
 </html>

@@ -9,6 +9,9 @@
     var el = $(id);
     if (el) el.textContent = t || "";
   }
+  function setDebug(t) {
+    setText("debug", t || "");
+  }
 
   function xhr(method, url, body, cb) {
     try {
@@ -66,17 +69,18 @@
         function (err, x) {
           if (err || !x) return;
           if (x.status !== 200) {
+            setDebug("status " + x.status + " on /status");
             teardown();
             location.replace("/");
             return;
           }
-
           var json;
           try {
             json = JSON.parse(x.responseText);
-          } catch {
+          } catch (_) {
             return;
           }
+
           if (json.closed) {
             teardown();
             location.replace("/");
@@ -143,22 +147,28 @@
   });
   window.addEventListener("offline", sendBeaconDisconnect);
 
-  // ----- session creation -----
+  // ----- session creation with GET-first (older engines) -----
   function createSessionCompat() {
     setText("status", "Creating session…");
+    setDebug("");
 
-    // Try GET first (older e-readers prefer this)
-    xhr("GET", "/api/session/new", null, function (err, x) {
+    // 1) Try GET (friendly to very old browsers)
+    xhr("GET", "/api/session/new?v=" + Date.now(), null, function (err, x) {
       if (!err && x && x.status === 200) {
         return handleSessionResponse(x);
       }
+      if (x)
+        setDebug(
+          "GET /api/session/new failed (status " + x.status + "). Trying POST…"
+        );
 
-      // Fallback to POST
+      // 2) Fallback to POST
       xhr("POST", "/api/session", { role: "receiver" }, function (err2, x2) {
         if (!err2 && x2 && x2.status === 200) {
           return handleSessionResponse(x2);
         }
         setText("status", "Failed to create session.");
+        if (x2) setDebug("POST /api/session failed (status " + x2.status + ")");
       });
     });
   }
@@ -167,10 +177,12 @@
     var json;
     try {
       json = JSON.parse(x.responseText);
-    } catch {
+    } catch (_) {
       setText("status", "Bad response.");
+      setDebug("JSON parse error");
       return;
     }
+
     if (!json || !json.ok) {
       setText("status", "Server error creating session.");
       return;
@@ -179,9 +191,10 @@
     sessionId = json.sessionId;
     receiverToken = json.receiverToken;
 
-    setText("code", json.code);
+    // Show code
+    setText("code", json.code || "----");
 
-    // PNG QR with cache-bust; retry once if it fails to load
+    // Load QR as PNG with cache-bust; retry once if it errors (common on Kobo)
     var qre = $("qr");
     if (qre) {
       var tried = 0;
@@ -189,8 +202,8 @@
         qre.onerror = function () {
           if (tried < 1) {
             tried++;
-            setTimeout(setQR, 400);
-          }
+            setTimeout(setQR, 500);
+          } else setDebug("QR image failed to load.");
         };
         qre.src =
           "/api/qr/" + encodeURIComponent(sessionId) + ".png?v=" + Date.now();
