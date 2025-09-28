@@ -33,6 +33,7 @@
   var receiverToken = null;
   var hbTimer = null;
   var pollTimer = null;
+  var beaconSent = false;
 
   // ---- heartbeat ----
   function startHeartbeat() {
@@ -66,7 +67,8 @@
         function (err, x) {
           if (err || !x) return;
           if (x.status !== 200) {
-            teardown("ttl");
+            teardown();
+            location.replace("/");
             return;
           }
 
@@ -78,8 +80,7 @@
           }
 
           if (json.closed) {
-            teardown(json.closedBy || "ttl");
-            // Always return to landing page when session ends
+            teardown();
             location.replace("/");
             return;
           }
@@ -125,7 +126,6 @@
   }
 
   // ---- disconnect beacon on leave/offline ----
-  var beaconSent = false;
   function sendBeaconDisconnect() {
     try {
       if (beaconSent) return;
@@ -144,46 +144,60 @@
   });
   window.addEventListener("offline", sendBeaconDisconnect);
 
-  // ---- create session ----
-  function createSession() {
+  // ---- session creation (GET first, POST fallback) ----
+  function createSessionCompat() {
     setText("status", "Creating session…");
-    xhr("POST", "/api/session", { role: "receiver" }, function (err, x) {
-      if (err || !x) {
-        setText("status", "Network error.");
-        return;
-      }
-      if (x.status !== 200) {
-        setText("status", "Failed to create session.");
-        return;
+
+    // 1) Try GET (works better on many e-readers)
+    xhr("GET", "/api/session/new", null, function (err, x) {
+      if (!err && x && x.status === 200) {
+        return handleSessionResponse(x);
       }
 
-      var json;
-      try {
-        json = JSON.parse(x.responseText);
-      } catch {
-        setText("status", "Bad response.");
-        return;
-      }
+      // 2) Fallback: JSON POST
+      xhr("POST", "/api/session", { role: "receiver" }, function (err2, x2) {
+        if (!err2 && x2 && x2.status === 200) {
+          return handleSessionResponse(x2);
+        }
 
-      sessionId = json.sessionId;
-      receiverToken = json.receiverToken;
-
-      // plain text key (black)
-      setText("code", json.code);
-
-      // PNG QR hosted by server (works on Kobo)
-      var qre = $("qr");
-      if (qre) qre.src = "/api/qr/" + encodeURIComponent(sessionId) + ".png";
-
-      setText("status", "Waiting for Sender to upload…");
-
-      startHeartbeat();
-      startPoll();
+        // 3) Show a clear message
+        var msg = "Failed to create session.";
+        if (err || err2) msg += " Network error.";
+        setText("status", msg);
+      });
     });
+  }
+
+  function handleSessionResponse(x) {
+    var json;
+    try {
+      json = JSON.parse(x.responseText);
+    } catch {
+      setText("status", "Bad response.");
+      return;
+    }
+
+    if (!json || !json.ok) {
+      setText("status", "Server error creating session.");
+      return;
+    }
+
+    sessionId = json.sessionId;
+    receiverToken = json.receiverToken;
+
+    setText("code", json.code); // plain black text key
+    var qre = $("qr");
+    if (qre)
+      qre.src =
+        "/api/qr/" + encodeURIComponent(sessionId) + ".png?v=" + Date.now(); // cache-bust
+
+    setText("status", "Waiting for Sender to upload…");
+    startHeartbeat();
+    startPoll();
   }
 
   // ---- init ----
   if (document.readyState === "loading")
-    document.addEventListener("DOMContentLoaded", createSession);
-  else createSession();
+    document.addEventListener("DOMContentLoaded", createSessionCompat);
+  else createSessionCompat();
 })();

@@ -34,6 +34,7 @@ const MAX_FILE_MB = Number(process.env.MAX_FILE_MB || 100);
 app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: false }));
 app.use(morgan("dev"));
 
 app.get("/api/health", (_req, res) => {
@@ -93,6 +94,44 @@ app.post("/api/session", async (req, res) => {
     qrDataUrl,
     expiresAt: s.expiresAt,
   });
+});
+
+// Compatibility route for e-readers that struggle with JSON POST
+app.get("/api/session/new", async (req, res) => {
+  try {
+    const s = createSession({ ttlSeconds: SESSION_TTL_SECONDS });
+    touchSession(s, SESSION_TTL_SECONDS);
+
+    const proto =
+      (req.headers["x-forwarded-proto"] &&
+        String(req.headers["x-forwarded-proto"]).split(",")[0]) ||
+      req.protocol ||
+      "http";
+    const host = req.headers["x-forwarded-host"] || req.headers.host;
+    const origin = host ? `${proto}://${host}` : "";
+
+    const senderLink = `${origin}/sender?sessionId=${encodeURIComponent(
+      s.id
+    )}&t=${encodeURIComponent(s.senderToken)}`;
+
+    const qrDataUrl = await QRCode.toDataURL(senderLink, {
+      scale: 6,
+      margin: 1,
+    });
+
+    return res.json({
+      ok: true,
+      sessionId: s.id,
+      code: s.code,
+      receiverToken: s.receiverToken,
+      senderLink,
+      qrDataUrl,
+      expiresAt: s.expiresAt,
+    });
+  } catch (e) {
+    console.error("GET /api/session/new error", e);
+    res.status(500).json({ ok: false, error: "server_error" });
+  }
 });
 
 /* ----------------------- Sender connect ----------------------- */
