@@ -1,16 +1,17 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <title>Sendo — Lite Receiver</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
+      /* Compact, Kobo-friendly, serif/italic titles, high-contrast buttons */
       :root {
-        --ink: #111;
-        --muted: #666;
-        --border: #ccc;
+        --ink: #000;
+        --muted: #444;
+        --border: #cfcfcf;
         --paper: #fff;
-        --accent: #e9e9e9;
+        --btn: #ececec;
       }
       * {
         box-sizing: border-box;
@@ -24,117 +25,129 @@
         -webkit-text-size-adjust: 100%;
       }
       body {
-        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-          Arial, sans-serif;
+        font-family: Georgia, "Times New Roman", Times, serif;
       }
       .wrap {
-        max-width: 680px;
+        max-width: 420px;
         margin: 0 auto;
-        padding: 16px;
+        padding: 10px;
       }
+
       h1 {
         font-size: 22px;
-        margin: 8px 0 6px;
+        font-style: italic;
+        font-weight: 500;
         text-align: center;
+        margin: 6px 0 10px;
       }
       .muted {
         color: var(--muted);
-        font-size: 14px;
+        font-size: 12px;
         text-align: center;
-        margin-bottom: 12px;
+        margin-bottom: 8px;
       }
+
       .card {
-        background: var(--paper);
         border: 1px solid var(--border);
         border-radius: 10px;
-        padding: 12px;
+        padding: 10px;
       }
-      .row {
-        margin: 10px 0;
+
+      .label {
+        font-size: 12px;
+        color: var(--muted);
+        margin: 6px 0 2px;
+        text-align: center;
       }
+
       .code {
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        font-size: 36px;
-        letter-spacing: 10px;
+        font-size: 28px;
+        letter-spacing: 8px;
         text-align: center;
         border: 1px solid var(--border);
         border-radius: 8px;
-        padding: 10px;
+        padding: 8px;
       }
+
       #qr {
         display: block;
-        width: 240px;
-        height: 240px;
-        margin: 12px auto;
+        width: 160px;
+        height: 160px;
+        margin: 10px auto;
         border: 1px solid var(--border);
-        border-radius: 8px;
+        border-radius: 6px;
       }
+
       .btn {
         display: block;
         width: 100%;
-        padding: 14px 16px;
         text-align: center;
-        font-weight: 600;
-        background: var(--accent);
-        color: var(--ink);
-        border: 1px solid var(--border);
-        border-radius: 12px;
         text-decoration: none;
+        font-size: 18px;
+        font-style: italic;
+        font-weight: 600;
+        font-family: inherit;
+        padding: 12px;
+        margin-top: 8px;
+        border-radius: 8px;
+        border: 2px solid var(--ink);
+        color: var(--ink);
+        background: var(--btn);
       }
       .btn:active {
-        filter: brightness(0.95);
+        background: #e2e2e2;
+      }
+
+      .row {
+        margin: 6px 0;
       }
       .footer {
-        margin-top: 10px;
         text-align: center;
         color: var(--muted);
         font-size: 12px;
+        margin-top: 10px;
       }
-      @media (min-width: 520px) {
+
+      /* Slightly larger on narrow phones but keep compact overall */
+      @media (max-width: 380px) {
         .code {
-          font-size: 40px;
+          font-size: 26px;
+          letter-spacing: 6px;
         }
         #qr {
-          width: 260px;
-          height: 260px;
+          width: 150px;
+          height: 150px;
+        }
+        .btn {
+          font-size: 17px;
+          padding: 11px;
         }
       }
     </style>
   </head>
   <body>
     <div class="wrap">
-      <h1>Sendo — Lite Receiver</h1>
-      <div class="muted">For e-readers. No animations, no modern JS.</div>
+      <h1>Send to Kobo/Kindle</h1>
+      <div class="muted">E-reader friendly • no animations</div>
 
-      <div class="card">
-        <div class="row" id="controls" style="display: none">
-          <a id="startBtn" class="btn">Start as Receiver</a>
-        </div>
+      <div class="card" id="sessionBox" style="display: none">
+        <div class="label">Unique key</div>
+        <div id="code" class="code">----</div>
 
-        <div id="sessionBox" style="display: none">
-          <div class="row muted">Code</div>
-          <div id="code" class="code">----</div>
+        <img id="qr" alt="QR code" />
 
-          <img id="qr" alt="QR code" />
+        <a id="downloadBtn" class="btn" href="#" style="display: none"
+          >Download file</a
+        >
+        <a id="disconnectBtn" class="btn" href="#">Disconnect</a>
 
-          <div class="row">
-            <a id="downloadBtn" class="btn" style="display: none"
-              >Download file</a
-            >
-          </div>
-
-          <div class="row">
-            <a id="disconnectBtn" class="btn">Disconnect</a>
-          </div>
-
-          <div id="status" class="muted">…</div>
-        </div>
+        <div id="status" class="muted" style="margin-top: 6px">…</div>
       </div>
 
       <div class="footer">Created by Kaung • © 2025 Sendo</div>
     </div>
 
-    <!-- No module, Kobo-safe -->
     <script src="/lite.js" defer></script>
   </body>
 </html>

@@ -1,5 +1,4 @@
 (function () {
-  // ---- tiny helpers ---------------------------------------------------------
   function xhr(method, url, body, cb) {
     try {
       var x = new XMLHttpRequest();
@@ -16,47 +15,44 @@
       cb(e, null);
     }
   }
-  function id(s) {
-    return document.getElementById(s);
+  function el(id) {
+    return document.getElementById(id);
   }
   function setStatus(t) {
-    id("status").textContent = t || "";
+    el("status").textContent = t || "";
   }
 
-  // ---- state ----------------------------------------------------------------
-  var sessionId = null;
-  var receiverToken = null;
+  var sid = null;
+  var rTok = null;
   var pollTimer = null;
   var hbTimer = null;
 
-  // ---- heartbeat ------------------------------------------------------------
-  function startHeartbeat() {
-    stopHeartbeat();
+  function startHB() {
+    stopHB();
     hbTimer = setInterval(function () {
-      if (!sessionId) return;
+      if (!sid) return;
       xhr(
         "POST",
         "/api/heartbeat",
-        { sessionId: sessionId, role: "receiver" },
+        { sessionId: sid, role: "receiver" },
         function () {}
       );
     }, 30000);
   }
-  function stopHeartbeat() {
+  function stopHB() {
     if (hbTimer) {
       clearInterval(hbTimer);
       hbTimer = null;
     }
   }
 
-  // ---- polling --------------------------------------------------------------
   function startPoll() {
     stopPoll();
     pollTimer = setInterval(function () {
-      if (!sessionId) return;
+      if (!sid) return;
       xhr(
         "GET",
-        "/api/session/" + encodeURIComponent(sessionId) + "/status",
+        "/api/session/" + encodeURIComponent(sid) + "/status",
         null,
         function (err, x) {
           if (err || !x) return;
@@ -64,39 +60,35 @@
             teardown("ttl");
             return;
           }
-          var json;
+          var j;
           try {
-            json = JSON.parse(x.responseText);
-          } catch (_) {
+            j = JSON.parse(x.responseText);
+          } catch (_e) {
             return;
           }
 
-          if (json.closed) {
-            teardown(json.closedBy || "ttl");
+          if (j.closed) {
+            teardown(j.closedBy || "ttl");
             return;
           }
 
-          if (json.hasFile && receiverToken) {
+          if (j.hasFile && rTok) {
             var href =
               location.origin +
               "/api/download/" +
-              encodeURIComponent(sessionId) +
+              encodeURIComponent(sid) +
               "?receiverToken=" +
-              encodeURIComponent(receiverToken);
-
-            var a = id("downloadBtn");
-            a.setAttribute("href", href);
-            // Kobo/Kindle sometimes ignore download if target=_blank
+              encodeURIComponent(rTok);
+            var a = el("downloadBtn");
+            a.href = href;
             a.removeAttribute("target");
             a.removeAttribute("rel");
             a.style.display = "block";
-
             setStatus(
-              "File ready" +
-                (json.file && json.file.name ? ": " + json.file.name : "")
+              "File ready" + (j.file && j.file.name ? ": " + j.file.name : "")
             );
           } else {
-            id("downloadBtn").style.display = "none";
+            el("downloadBtn").style.display = "none";
             setStatus("Waiting for Sender to upload…");
           }
         }
@@ -110,20 +102,14 @@
     }
   }
 
-  // ---- lifecycle ------------------------------------------------------------
   function teardown(reason) {
     stopPoll();
-    stopHeartbeat();
-    id("sessionBox").style.display = "none";
-    sessionId = null;
-    receiverToken = null;
-
-    var c = id("controls");
-    if (c) c.style.display = "block"; // in case we fall back to manual
+    stopHB();
     var s = "Session expired.";
     if (reason === "sender") s = "Ended by Sender.";
     else if (reason === "receiver") s = "Ended by Receiver.";
     setStatus(s);
+    // keep the box visible with the message so user sees what happened
   }
 
   function createSession() {
@@ -137,62 +123,52 @@
         setStatus("Failed to create session.");
         return;
       }
-      var json;
+      var j;
       try {
-        json = JSON.parse(x.responseText);
+        j = JSON.parse(x.responseText);
       } catch (_e) {
         setStatus("Bad response.");
         return;
       }
 
-      sessionId = json.sessionId;
-      receiverToken = json.receiverToken;
+      sid = j.sessionId;
+      rTok = j.receiverToken;
 
-      id("code").textContent = json.code;
-      id("qr").src = json.qrDataUrl || "";
-      id("sessionBox").style.display = "block";
-      var c = id("controls");
-      if (c) c.style.display = "none";
+      el("code").textContent = j.code;
+      // ✅ Use the server PNG endpoint for QR (more reliable on Kobo)
+      el("qr").src = "/api/qr/" + encodeURIComponent(sid) + ".png";
 
+      el("sessionBox").style.display = "block";
       setStatus("Waiting for Sender to upload…");
-      startHeartbeat();
+
+      startHB();
       startPoll();
     });
   }
 
-  function disconnect() {
-    if (!sessionId) {
-      teardown("receiver");
+  function disconnect(ev) {
+    if (ev) ev.preventDefault();
+    if (!sid) {
+      setStatus("Ended by Receiver.");
       return;
     }
     xhr(
       "POST",
       "/api/disconnect",
-      { sessionId: sessionId, by: "receiver" },
+      { sessionId: sid, by: "receiver" },
       function () {
-        teardown("receiver");
+        setStatus("Ended by Receiver.");
+        // keep UI on screen; sender will see the disconnect too
       }
     );
   }
 
-  // ---- boot -----------------------------------------------------------------
   function ready() {
-    // Always wire up disconnect
-    id("disconnectBtn").onclick = disconnect;
-
-    // Auto-start a session when the page loads (fix for Kobo not clicking well)
+    el("disconnectBtn").onclick = disconnect;
+    // Auto-create session on load so Kobo users see code/QR immediately
     createSession();
-
-    // Keep a manual fall-back (visible only if auto-start hides it too quickly)
-    var startBtn = id("startBtn");
-    if (startBtn)
-      startBtn.onclick = function () {
-        if (!sessionId) createSession();
-      };
   }
-  if (document.readyState === "loading") {
+  if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", ready);
-  } else {
-    ready();
-  }
+  else ready();
 })();
