@@ -1,14 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
   <head>
     <meta charset="UTF-8" />
-    <title>Send to Kobo/Kindle</title>
+    <title>Sendo — Lite Receiver</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       :root {
-        --ink: #000;
-        --muted: #444;
-        --border: #cfcfcf;
+        --ink: #111;
+        --muted: #666;
+        --border: #ccc;
+        --paper: #fff;
+        --accent: #e9e9e9;
       }
       * {
         box-sizing: border-box;
@@ -19,144 +21,120 @@
         padding: 0;
         background: #fff;
         color: var(--ink);
+        -webkit-text-size-adjust: 100%;
       }
       body {
-        font-family: Georgia, "Times New Roman", Times, serif;
-        -webkit-text-size-adjust: 100%;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+          Arial, sans-serif;
+      }
+      .wrap {
+        max-width: 680px;
+        margin: 0 auto;
         padding: 16px;
       }
-
-      .wrap {
-        max-width: 540px;
-        margin: 0 auto;
-      }
-
       h1 {
-        font-size: 32px;
-        font-style: italic;
-        font-weight: 500;
+        font-size: 22px;
+        margin: 8px 0 6px;
         text-align: center;
-        margin: 8px 0 18px;
       }
-
+      .muted {
+        color: var(--muted);
+        font-size: 14px;
+        text-align: center;
+        margin-bottom: 12px;
+      }
       .card {
+        background: var(--paper);
         border: 1px solid var(--border);
         border-radius: 10px;
         padding: 12px;
       }
-
       .row {
-        display: flex;
-        gap: 12px;
-        align-items: center;
         margin: 10px 0;
       }
-      .col-left {
-        width: 140px;
-        font-size: 18px;
-        text-align: right;
-        padding-right: 6px;
-      }
-      .col-right {
-        flex: 1;
-      }
-
       .code {
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        font-size: 42px;
+        font-size: 36px;
         letter-spacing: 10px;
         text-align: center;
-        border: 2px solid var(--ink);
-        border-radius: 6px;
-        padding: 10px 6px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px;
       }
-
       #qr {
         display: block;
-        width: 200px;
-        height: 200px;
+        width: 240px;
+        height: 240px;
         margin: 12px auto;
         border: 1px solid var(--border);
+        border-radius: 8px;
       }
-
       .btn {
         display: block;
         width: 100%;
+        padding: 14px 16px;
         text-align: center;
-        text-decoration: none;
-        font-family: inherit;
-        font-size: 24px; /* slightly larger for tap targets */
         font-weight: 600;
-        padding: 16px 14px;
-        border-radius: 6px;
-        border: 2px solid #000; /* strong contrast */
-        color: #000;
-        background: #e6e6e6;
+        background: var(--accent);
+        color: var(--ink);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        text-decoration: none;
       }
       .btn:active {
-        background: #dcdcdc;
+        filter: brightness(0.95);
       }
-
-      .muted {
-        color: var(--muted);
-        font-size: 16px;
-        text-align: center;
-        margin-top: 6px;
-      }
-
       .footer {
+        margin-top: 10px;
         text-align: center;
-        font-size: 14px;
         color: var(--muted);
-        margin-top: 18px;
+        font-size: 12px;
       }
-
-      @media (max-width: 420px) {
-        .col-left {
-          width: 110px;
-          font-size: 16px;
-        }
+      @media (min-width: 520px) {
         .code {
-          font-size: 36px;
-          letter-spacing: 8px;
+          font-size: 40px;
         }
         #qr {
-          width: 180px;
-          height: 180px;
-        }
-        .btn {
-          font-size: 20px;
-          padding: 14px;
+          width: 260px;
+          height: 260px;
         }
       }
     </style>
   </head>
   <body>
     <div class="wrap">
-      <h1>Send to Kobo/Kindle</h1>
+      <h1>Sendo — Lite Receiver</h1>
+      <div class="muted">For e-readers. No animations, no modern JS.</div>
 
       <div class="card">
-        <div class="row">
-          <div class="col-left">Unique<br />key</div>
-          <div class="col-right"><div id="code" class="code">----</div></div>
+        <div class="row" id="controls" style="display: none">
+          <a id="startBtn" class="btn">Start as Receiver</a>
         </div>
 
-        <img id="qr" alt="QR code" />
+        <div id="sessionBox" style="display: none">
+          <div class="row muted">Code</div>
+          <div id="code" class="code">----</div>
 
-        <div class="row">
-          <div class="col-left"></div>
-          <div class="col-right">
-            <a id="downloadBtn" class="btn" href="#" rel="noopener"
+          <img id="qr" alt="QR code" />
+
+          <div class="row">
+            <a id="downloadBtn" class="btn" style="display: none"
               >Download file</a
             >
-            <div id="status" class="muted">Waiting for Sender to upload…</div>
           </div>
+
+          <div class="row">
+            <a id="disconnectBtn" class="btn">Disconnect</a>
+          </div>
+
+          <div id="status" class="muted">…</div>
         </div>
       </div>
 
       <div class="footer">Created by Kaung • © 2025 Sendo</div>
     </div>
 
-    <script src="/lite.js"></script>
+    <!-- No module, Kobo-safe -->
+    <script src="/lite.js" defer></script>
   </body>
 </html>

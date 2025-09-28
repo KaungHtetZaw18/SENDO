@@ -1,5 +1,5 @@
-// web/public/lite.js
 (function () {
+  // ---- tiny helpers ---------------------------------------------------------
   function xhr(method, url, body, cb) {
     try {
       var x = new XMLHttpRequest();
@@ -16,18 +16,20 @@
       cb(e, null);
     }
   }
-  function qs(id) {
-    return document.getElementById(id);
+  function id(s) {
+    return document.getElementById(s);
   }
   function setStatus(t) {
-    qs("status").textContent = t || "";
+    id("status").textContent = t || "";
   }
 
+  // ---- state ----------------------------------------------------------------
   var sessionId = null;
   var receiverToken = null;
   var pollTimer = null;
   var hbTimer = null;
 
+  // ---- heartbeat ------------------------------------------------------------
   function startHeartbeat() {
     stopHeartbeat();
     hbTimer = setInterval(function () {
@@ -47,6 +49,7 @@
     }
   }
 
+  // ---- polling --------------------------------------------------------------
   function startPoll() {
     stopPoll();
     pollTimer = setInterval(function () {
@@ -64,7 +67,7 @@
           var json;
           try {
             json = JSON.parse(x.responseText);
-          } catch (e) {
+          } catch (_) {
             return;
           }
 
@@ -81,17 +84,19 @@
               "?receiverToken=" +
               encodeURIComponent(receiverToken);
 
-            var a = qs("downloadBtn");
+            var a = id("downloadBtn");
             a.setAttribute("href", href);
+            // Kobo/Kindle sometimes ignore download if target=_blank
             a.removeAttribute("target");
             a.removeAttribute("rel");
             a.style.display = "block";
+
             setStatus(
               "File ready" +
                 (json.file && json.file.name ? ": " + json.file.name : "")
             );
           } else {
-            qs("downloadBtn").style.display = "none";
+            id("downloadBtn").style.display = "none";
             setStatus("Waiting for Sender to upload…");
           }
         }
@@ -105,17 +110,20 @@
     }
   }
 
+  // ---- lifecycle ------------------------------------------------------------
   function teardown(reason) {
     stopPoll();
     stopHeartbeat();
-    qs("startBtn") && (qs("startBtn").style.display = "block");
-    qs("disconnectBtn").style.display = "none";
+    id("sessionBox").style.display = "none";
     sessionId = null;
     receiverToken = null;
 
-    if (reason === "sender") setStatus("Ended by Sender.");
-    else if (reason === "receiver") setStatus("Ended by Receiver.");
-    else setStatus("Session expired.");
+    var c = id("controls");
+    if (c) c.style.display = "block"; // in case we fall back to manual
+    var s = "Session expired.";
+    if (reason === "sender") s = "Ended by Sender.";
+    else if (reason === "receiver") s = "Ended by Receiver.";
+    setStatus(s);
   }
 
   function createSession() {
@@ -132,7 +140,7 @@
       var json;
       try {
         json = JSON.parse(x.responseText);
-      } catch (e) {
+      } catch (_e) {
         setStatus("Bad response.");
         return;
       }
@@ -140,20 +148,23 @@
       sessionId = json.sessionId;
       receiverToken = json.receiverToken;
 
-      qs("code").textContent = json.code;
-      qs("qr").src = json.qrDataUrl || "";
+      id("code").textContent = json.code;
+      id("qr").src = json.qrDataUrl || "";
+      id("sessionBox").style.display = "block";
+      var c = id("controls");
+      if (c) c.style.display = "none";
 
-      if (qs("startBtn")) qs("startBtn").style.display = "none";
-      qs("disconnectBtn").style.display = "block";
       setStatus("Waiting for Sender to upload…");
-
       startHeartbeat();
       startPoll();
     });
   }
 
   function disconnect() {
-    if (!sessionId) return teardown("receiver");
+    if (!sessionId) {
+      teardown("receiver");
+      return;
+    }
     xhr(
       "POST",
       "/api/disconnect",
@@ -164,10 +175,20 @@
     );
   }
 
+  // ---- boot -----------------------------------------------------------------
   function ready() {
-    var startBtn = qs("startBtn");
-    if (startBtn) startBtn.onclick = createSession;
-    qs("disconnectBtn").onclick = disconnect;
+    // Always wire up disconnect
+    id("disconnectBtn").onclick = disconnect;
+
+    // Auto-start a session when the page loads (fix for Kobo not clicking well)
+    createSession();
+
+    // Keep a manual fall-back (visible only if auto-start hides it too quickly)
+    var startBtn = id("startBtn");
+    if (startBtn)
+      startBtn.onclick = function () {
+        if (!sessionId) createSession();
+      };
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", ready);
