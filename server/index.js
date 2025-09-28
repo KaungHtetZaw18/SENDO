@@ -39,6 +39,7 @@ app.use(
       directives: {
         "script-src": ["'self'"],
         "img-src": ["'self'", "data:"],
+        "default-src": ["'self'"],
       },
     },
   })
@@ -331,24 +332,66 @@ if (SERVE_WEB) {
 
   app.use(express.static(distDir));
 
-  // Direct access to lite page
   app.get(["/lite", "/lite.html"], (_req, res) => res.sendFile(litePath));
 
-  // Smart receiver: ereaders (or ?mode=lite) get lite page
   app.get("/receiver", (req, res) => {
     if (wantsLite(req)) return res.sendFile(litePath);
     return res.sendFile(indexPath);
   });
 
-  // Sender & landing always React
   app.get(["/", "/sender"], (_req, res) => res.sendFile(indexPath));
 
-  // SPA fallback for non-API
   app.get(/^\/(?!api\/).*/, (_req, res) => {
     res.sendFile(indexPath);
   });
 }
+// --- DEBUG: list the deployed dist/ contents so we know what Render is serving
+app.get("/debug/dist", async (_req, res) => {
+  try {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const distDir = path.resolve(__dirname, "../web/dist");
 
+    const fs = await import("fs/promises");
+    const entries = await fs.readdir(distDir, { withFileTypes: true });
+    const list = await Promise.all(
+      entries.map(async (e) => {
+        if (e.isDirectory()) {
+          const sub = await fs.readdir(path.join(distDir, e.name));
+          return e.name + "/ -> " + sub.join(", ");
+        }
+        return e.name;
+      })
+    );
+    res
+      .type("text")
+      .send(["DIST DIR:", distDir, "", "FILES:", ...list].join("\n"));
+  } catch (err) {
+    res
+      .status(500)
+      .type("text")
+      .send("ERR reading dist: " + String(err));
+  }
+});
+
+// --- DEBUG: show UA + wantsLite result
+app.get("/debug/ua", (req, res) => {
+  res.json({
+    ua: req.headers["user-agent"] || "",
+    isEreader:
+      /(Kobo|Kindle|Silk|Tolino|PocketBook|Nook|E-ink|Eink|InkPalm)/i.test(
+        String(req.headers["user-agent"] || "")
+      ),
+    wantsLite:
+      req.query.mode === "lite"
+        ? true
+        : req.query.mode === "full"
+        ? false
+        : /(Kobo|Kindle|Silk|Tolino|PocketBook|Nook|E-ink|Eink|InkPalm)/i.test(
+            String(req.headers["user-agent"] || "")
+          ),
+  });
+});
 app.listen(PORT, () => {
   console.log(`Sendo server listening on :${PORT}  (SERVE_WEB=${SERVE_WEB})`);
 });
