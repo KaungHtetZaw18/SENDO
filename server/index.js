@@ -29,10 +29,9 @@ const PORT = process.env.PORT || 3001;
 const SESSION_TTL_SECONDS = Number(process.env.SESSION_TTL_SECONDS || 300);
 const MAX_FILE_MB = Number(process.env.MAX_FILE_MB || 100);
 
-// If you deploy as a single app (same-origin), we don’t need strict CORS.
-// If you host sender/receiver elsewhere, set FRONTEND_BASE and tighten CORS later.
+/* ----------------------- Middleware ----------------------- */
 app.use(helmet());
-app.use(cors());
+app.use(cors()); // all origins; safe for single-app. Tighten later if you split origins.
 app.use(express.json({ limit: "2mb" }));
 app.use(morgan("dev"));
 
@@ -40,22 +39,7 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, name: "Sendo", time: Date.now() });
 });
 
-/* ----------------------- E-reader detection ----------------------- */
-function isEreaderUA(req) {
-  const ua = String(req.headers["user-agent"] || "");
-  // Common e-reader signatures (Kindle/Kobo/Boox/PocketBook/Tolino/Nook)
-  return /(Kobo|Kindle|Silk|NetFront|InkView|E-ink|Eink|Boox|PocketBook|Tolino|Nook|InkPalm)/i.test(
-    ua
-  );
-}
-function wantsLite(req) {
-  const q = req.query || {};
-  if (q.mode === "lite") return true;
-  if (q.mode === "full") return false;
-  return isEreaderUA(req);
-}
-
-/* ----------------------- Ebook validation ----------------------- */
+/* ----------------------- Helpers ----------------------- */
 const ALLOWED_EXTS = new Set([
   ".epub",
   ".mobi",
@@ -68,39 +52,17 @@ function isAllowedEbook(filename) {
   const ext = (path.extname(filename) || "").toLowerCase();
   return ALLOWED_EXTS.has(ext);
 }
-// --- Serve static frontend (no React build) ---
-if (SERVE_WEB) {
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
-
-  // we now ship plain HTML/CSS/JS in web/public
-  const staticRoot = path.resolve(__dirname, "../web/public");
-  const indexPath = path.join(staticRoot, "index.html"); // receiver page
-  const senderPath = path.join(staticRoot, "sender.html");
-  const litePath = path.join(staticRoot, "lite.html");
-
-  app.use(express.static(staticRoot, { fallthrough: true }));
-
-  // Kobo/Kindle (or ?mode=lite) -> lite receiver, otherwise regular receiver
-  app.get("/receiver", (req, res) => {
-    return wantsLite(req) ? res.sendFile(litePath) : res.sendFile(indexPath);
-  });
-
-  // Sender page
-  app.get("/sender", (_req, res) => res.sendFile(senderPath));
-
-  // Direct access to lite
-  app.get(["/lite", "/lite.html"], (_req, res) => res.sendFile(litePath));
-
-  // Landing — show receiver
-  app.get("/", (_req, res) => res.sendFile(indexPath));
-
-  // Everything else that isn’t /api/* -> receiver
-  app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(indexPath));
+function requestOrigin(req) {
+  const proto =
+    (req.headers["x-forwarded-proto"] &&
+      String(req.headers["x-forwarded-proto"]).split(",")[0]) ||
+    req.protocol ||
+    "http";
+  const host = req.headers["x-forwarded-host"] || req.headers.host;
+  return host ? `${proto}://${host}` : "";
 }
 
 /* ----------------------- Create session ----------------------- */
-// POST /api/session  { role: 'receiver' }
 app.post("/api/session", async (req, res) => {
   const { role } = req.body || {};
   if (role !== "receiver") {
@@ -112,20 +74,10 @@ app.post("/api/session", async (req, res) => {
   const s = createSession({ ttlSeconds: SESSION_TTL_SECONDS });
   touchSession(s, SESSION_TTL_SECONDS);
 
-  // Build origin robustly (works behind Render/NGINX)
-  const proto =
-    (req.headers["x-forwarded-proto"] &&
-      String(req.headers["x-forwarded-proto"]).split(",")[0]) ||
-    req.protocol ||
-    "http";
-  const host = req.headers["x-forwarded-host"] || req.headers.host;
-  const origin = host ? `${proto}://${host}` : "";
-
+  const origin = requestOrigin(req);
   const senderLink = `${origin}/sender?sessionId=${encodeURIComponent(
     s.id
   )}&t=${encodeURIComponent(s.senderToken)}`;
-
-  // Data URL is still nice to send to non-e-readers; on Kobo we’ll use PNG route
   const qrDataUrl = await QRCode.toDataURL(senderLink, { scale: 6, margin: 1 });
 
   res.json({
@@ -140,7 +92,6 @@ app.post("/api/session", async (req, res) => {
 });
 
 /* ----------------------- Sender connect ----------------------- */
-// POST /api/connect  { code } OR { sessionId }
 app.post("/api/connect", (req, res) => {
   const { code, sessionId } = req.body || {};
   let s = null;
@@ -148,9 +99,8 @@ app.post("/api/connect", (req, res) => {
   if (!s && sessionId) s = getSessionById(String(sessionId));
   if (!s)
     return res.status(404).json({ ok: false, error: "Session not found" });
-  if (s.expiresAt <= Date.now() || s.status === "closed") {
+  if (s.expiresAt <= Date.now() || s.status === "closed")
     return res.status(410).json({ ok: false, error: "Expired/closed" });
-  }
 
   s.senderConnected = true;
   s.status = "connected";
@@ -165,7 +115,6 @@ app.post("/api/connect", (req, res) => {
 });
 
 /* ----------------------- Status (polling) ----------------------- */
-// GET /api/session/:id/status
 app.get("/api/session/:id/status", (req, res) => {
   const s = getSessionById(String(req.params.id));
   if (!s) return res.status(404).json({ ok: false, error: "Not found" });
@@ -194,8 +143,7 @@ const storage = multer.diskStorage({
   destination: (req, _file, cb) => {
     const sid = req.query.sessionId || req.body.sessionId;
     if (!sid) return cb(new Error("Missing sessionId"), "");
-    const dir = sessionDir(String(sid));
-    cb(null, dir);
+    cb(null, sessionDir(String(sid)));
   },
   filename: (_req, file, cb) => cb(null, file.originalname),
 });
@@ -204,7 +152,6 @@ const upload = multer({
   limits: { fileSize: MAX_FILE_MB * 1024 * 1024 },
 });
 
-// POST /api/upload?sessionId=...&senderToken=...
 app.post("/api/upload", upload.single("file"), async (req, res) => {
   const { sessionId, senderToken } = req.query || {};
   const s = getSessionById(String(sessionId));
@@ -217,18 +164,17 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
     return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
   if (!req.file) return res.status(400).json({ ok: false, error: "No file" });
-
   if (!isAllowedEbook(req.file.originalname)) {
     if (req.file?.path) await safeUnlink(req.file.path);
-    return res.status(415).json({
-      ok: false,
-      error: "Only .epub .mobi .azw .azw3 .pdf .txt are allowed",
-    });
+    return res
+      .status(415)
+      .json({
+        ok: false,
+        error: "Only .epub .mobi .azw .azw3 .pdf .txt are allowed",
+      });
   }
 
-  // Replace previous file (single-file rule)
   if (s.file?.path) await safeUnlink(s.file.path);
-
   const meta = {
     name: req.file.originalname,
     size: req.file.size,
@@ -246,7 +192,6 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
 });
 
 /* ----------------------- Download (delete after success) ----------------------- */
-// GET /api/download/:sessionId?receiverToken=...
 app.get("/api/download/:sessionId", async (req, res) => {
   const s = getSessionById(String(req.params.sessionId));
   if (!s)
@@ -263,7 +208,6 @@ app.get("/api/download/:sessionId", async (req, res) => {
     const stat = fs.statSync(s.file.path);
     const asciiFallback = s.file.name.replace(/[^\x20-\x7E]+/g, "_");
 
-    // Kobo/Kindle-friendly headers
     res.setHeader("Content-Type", s.file.type || "application/octet-stream");
     res.setHeader(
       "Content-Disposition",
@@ -280,7 +224,6 @@ app.get("/api/download/:sessionId", async (req, res) => {
     const stream = fs.createReadStream(s.file.path);
     stream.pipe(res);
 
-    // Delete only after successful transfer (plus small grace)
     res.once("finish", async () => {
       try {
         setTimeout(async () => {
@@ -291,8 +234,9 @@ app.get("/api/download/:sessionId", async (req, res) => {
       } catch {}
     });
 
-    // If client aborts, keep file so they can retry
-    res.once("close", () => {});
+    res.once("close", () => {
+      // aborted: keep file for retry
+    });
 
     touchSession(s, SESSION_TTL_SECONDS);
   } catch (err) {
@@ -328,19 +272,12 @@ app.post("/api/disconnect", async (req, res) => {
   res.json({ ok: true });
 });
 
-/* ----------------------- QR as PNG (reliable on e-readers) ----------------------- */
+/* ----------------------- QR as PNG (works on e-readers) ----------------------- */
 app.get("/api/qr/:id.png", async (req, res) => {
   const s = getSessionById(String(req.params.id));
   if (!s) return res.status(404).end();
 
-  const proto =
-    (req.headers["x-forwarded-proto"] &&
-      String(req.headers["x-forwarded-proto"]).split(",")[0]) ||
-    req.protocol ||
-    "http";
-  const host = req.headers["x-forwarded-host"] || req.headers.host;
-  const origin = host ? `${proto}://${host}` : "";
-
+  const origin = requestOrigin(req);
   const senderLink = `${origin}/sender?sessionId=${encodeURIComponent(
     s.id
   )}&t=${encodeURIComponent(s.senderToken)}`;
@@ -358,30 +295,25 @@ app.get("/api/qr/:id.png", async (req, res) => {
   }
 });
 
-/* ----------------------- Sweeper ----------------------- */
-setInterval(() => sweepExpired(), 60 * 1000);
-
-/* ----------------------- Serve static frontend (no React) ----------------------- */
+/* ----------------------- Serve frontend (plain files) ----------------------- */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.resolve(__dirname, "../web/public");
 
+// Serve static assets
 app.use(express.static(publicDir));
 
-// E-readers get the lite receiver page
-app.get("/receiver", (req, res) => {
-  // If you want to force lite always, just send lite.html unconditionally.
-  // Here we keep smart detection + manual override (?mode=lite|full).
-  if (wantsLite(req)) return res.sendFile(path.join(publicDir, "lite.html"));
-  return res.sendFile(path.join(publicDir, "lite.html")); // receiver is lite by design
+// Receiver (lite)
+app.get("/receiver", (_req, res) => {
+  res.sendFile(path.join(publicDir, "lite.html"));
 });
 
-// Sender form page
+// Sender
 app.get("/sender", (_req, res) => {
   res.sendFile(path.join(publicDir, "sender.html"));
 });
 
-// Landing page
+// Landing (receiver)
 app.get("/", (_req, res) => {
   res.sendFile(path.join(publicDir, "index.html"));
 });
