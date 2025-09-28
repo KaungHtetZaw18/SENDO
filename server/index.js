@@ -68,6 +68,36 @@ function isAllowedEbook(filename) {
   const ext = (path.extname(filename) || "").toLowerCase();
   return ALLOWED_EXTS.has(ext);
 }
+// --- Serve static frontend (no React build) ---
+if (SERVE_WEB) {
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+
+  // we now ship plain HTML/CSS/JS in web/public
+  const staticRoot = path.resolve(__dirname, "../web/public");
+  const indexPath = path.join(staticRoot, "index.html"); // receiver page
+  const senderPath = path.join(staticRoot, "sender.html");
+  const litePath = path.join(staticRoot, "lite.html");
+
+  app.use(express.static(staticRoot, { fallthrough: true }));
+
+  // Kobo/Kindle (or ?mode=lite) -> lite receiver, otherwise regular receiver
+  app.get("/receiver", (req, res) => {
+    return wantsLite(req) ? res.sendFile(litePath) : res.sendFile(indexPath);
+  });
+
+  // Sender page
+  app.get("/sender", (_req, res) => res.sendFile(senderPath));
+
+  // Direct access to lite
+  app.get(["/lite", "/lite.html"], (_req, res) => res.sendFile(litePath));
+
+  // Landing — show receiver
+  app.get("/", (_req, res) => res.sendFile(indexPath));
+
+  // Everything else that isn’t /api/* -> receiver
+  app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(indexPath));
+}
 
 /* ----------------------- Create session ----------------------- */
 // POST /api/session  { role: 'receiver' }
@@ -190,12 +220,10 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
 
   if (!isAllowedEbook(req.file.originalname)) {
     if (req.file?.path) await safeUnlink(req.file.path);
-    return res
-      .status(415)
-      .json({
-        ok: false,
-        error: "Only .epub .mobi .azw .azw3 .pdf .txt are allowed",
-      });
+    return res.status(415).json({
+      ok: false,
+      error: "Only .epub .mobi .azw .azw3 .pdf .txt are allowed",
+    });
   }
 
   // Replace previous file (single-file rule)
