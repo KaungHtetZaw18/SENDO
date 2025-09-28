@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <title>Sendo — Lite Receiver</title>
@@ -7,138 +7,146 @@
     <style>
       :root {
         --bg: #ffffff;
-        --paper: #ffffff;
         --ink: #000000;
-        --muted: #444;
-        --border: #ddd;
-        --accent: #000;
+        --muted: #444444;
+        --border: #cccccc;
       }
       * {
         box-sizing: border-box;
       }
       html,
       body {
-        background: var(--bg);
-        color: var(--ink);
         margin: 0;
         padding: 0;
+        background: var(--bg);
+        color: var(--ink);
       }
       body {
-        padding: 16px;
         font-family: Arial, Helvetica, sans-serif;
+        padding: 10px;
       }
-      .header {
-        text-align: center;
-        margin-bottom: 12px;
-      }
-      .subtitle {
-        color: var(--muted);
-        font-size: 14px;
-      }
+
+      /* Keep width small so Kobo fits everything without scrolling */
       .wrap {
-        max-width: 560px;
+        max-width: 420px;
         margin: 0 auto;
       }
-      .card {
-        background: var(--paper);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 12px;
+
+      .h1 {
+        font-size: 18px;
+        font-weight: 700;
+        text-align: center;
+        margin: 6px 0 2px;
       }
+      .sub {
+        font-size: 12px;
+        color: var(--muted);
+        text-align: center;
+        margin-bottom: 8px;
+      }
+
+      .box {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px;
+      }
+
       .row {
-        margin: 10px 0;
+        margin: 8px 0;
       }
       .label {
+        font-size: 12px;
         color: var(--muted);
-        font-size: 14px;
-        margin-bottom: 4px;
+        margin-bottom: 2px;
       }
       .mono {
-        font-family: monospace;
+        font-family: ui-monospace, monospace;
         word-wrap: break-word;
       }
+
       .code {
-        font-size: 28px;
-        letter-spacing: 6px;
-      }
-      .btn {
-        display: block;
-        width: 100%;
-        padding: 12px 14px;
-        text-align: center;
-        font-weight: 700;
-        background: var(--ink);
-        color: #fff;
-        border: 1px solid var(--ink);
-        border-radius: 10px;
-        text-decoration: none;
-      }
-      .btn.secondary {
-        background: #fff;
-        color: var(--ink);
+        font-size: 22px;
+        letter-spacing: 4px;
       }
       #qr {
         display: block;
-        width: 220px;
-        height: 220px;
-        margin: 12px auto;
+        width: 180px;
+        height: 180px;
+        margin: 8px auto;
         border: 1px solid var(--border);
       }
-      #downloadBtn,
+
+      /* Minimal, no filled boxes */
+      .btn {
+        display: block;
+        width: 100%;
+        padding: 8px 10px;
+        text-align: center;
+        font-weight: 700;
+        font-size: 14px;
+        color: var(--ink);
+        background: #fff;
+        border: 1px solid var(--ink);
+        border-radius: 8px;
+        text-decoration: none;
+      }
+      .btn.ghost {
+        border-color: var(--border);
+      }
+
+      /* Hide sections initially */
+      #sessionBox {
+        display: none;
+      }
       #downloadForm {
         display: none;
       }
+
       .footer {
         text-align: center;
-        margin-top: 14px;
         color: var(--muted);
-        font-size: 13px;
-      }
-      @media (min-width: 520px) {
-        #qr {
-          width: 260px;
-          height: 260px;
-        }
-        .code {
-          font-size: 32px;
-        }
+        font-size: 11px;
+        margin-top: 10px;
       }
     </style>
   </head>
   <body>
     <div class="wrap">
-      <div class="header">
-        <h1>Sendo — Lite Receiver</h1>
-        <div class="subtitle">For e-readers. No animations, no modern JS.</div>
-      </div>
+      <div class="h1">Sendo — Lite Receiver</div>
+      <div class="sub">For e-readers. No animations, no modern JS.</div>
 
-      <div class="card">
+      <div class="box">
         <div class="row">
           <button id="startBtn" class="btn">Start as Receiver</button>
           <button
             id="disconnectBtn"
-            class="btn secondary"
-            style="margin-top: 8px; display: none"
+            class="btn ghost"
+            style="display: none; margin-top: 6px"
           >
             Disconnect
           </button>
         </div>
 
-        <div id="sessionBox" style="display: none">
-          <div class="label">Connection Code</div>
-          <div id="code" class="mono code">----</div>
+        <div id="sessionBox">
+          <div class="row">
+            <div class="label">Connection Code</div>
+            <div id="code" class="mono code">----</div>
+          </div>
 
-          <div class="label" style="margin-top: 8px">Sender Link</div>
-          <div id="linkBox" class="mono"></div>
+          <div class="row">
+            <div class="label">Sender Link</div>
+            <div id="linkBox" class="mono"></div>
+          </div>
 
           <img id="qr" alt="QR code" />
 
-          <!-- Reliable download on e-readers: submit a GET form in same tab -->
+          <!-- Kobo-safe: same-tab GET with hidden token -->
           <form id="downloadForm" method="GET" class="row">
+            <input type="hidden" name="receiverToken" id="rt" value="" />
             <button type="submit" class="btn">Download file</button>
           </form>
 
-          <div id="status" class="subtitle" style="margin-top: 8px"></div>
+          <div id="status" class="sub" style="margin-top: 6px"></div>
         </div>
       </div>
 

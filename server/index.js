@@ -376,7 +376,7 @@ app.get("/debug/dist", async (_req, res) => {
 // Smart receiver entry: e-readers (or ?mode=lite) -> 302 to /lite.html
 app.get("/receiver", (req, res) => {
   if (wantsLite(req)) return res.redirect(302, "/lite.html");
-  return res.sendFile(indexPath); // normal React receiver otherwise
+  return res.sendFile(indexPath);
 });
 // --- DEBUG: show UA + wantsLite result
 app.get("/debug/ua", (req, res) => {

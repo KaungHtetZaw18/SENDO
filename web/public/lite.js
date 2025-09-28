@@ -73,16 +73,15 @@
           }
 
           if (json.hasFile && receiverToken) {
-            // Set form action for a same-tab GET download (more reliable on Kobo)
+            // Configure same-tab GET form with hidden token (Kobo-friendly)
             var form = qs("downloadForm");
             form.setAttribute(
               "action",
-              "/api/download/" +
-                encodeURIComponent(sessionId) +
-                "?receiverToken=" +
-                encodeURIComponent(receiverToken)
+              "/api/download/" + encodeURIComponent(sessionId)
             );
+            qs("rt").value = receiverToken;
             form.style.display = "block";
+
             setStatus(
               "File ready" +
                 (json.file && json.file.name ? ": " + json.file.name : "")
@@ -139,8 +138,7 @@
 
       qs("code").innerHTML = json.code;
       qs("linkBox").innerHTML = json.senderLink;
-
-      // Kobo-friendly PNG (avoid data: URLs)
+      // Kobo-friendly PNG QR (no data: URIs)
       qs("qr").src = "/api/qr/" + encodeURIComponent(sessionId) + ".png";
 
       qs("sessionBox").style.display = "block";
