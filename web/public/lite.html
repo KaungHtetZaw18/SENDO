@@ -4,6 +4,8 @@
     <meta charset="utf-8" />
     <title>Send to Kobo/Kindle</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Cache-Control" content="no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
     <style>
       :root {
         --ink: #111;
@@ -42,11 +44,8 @@
         background: var(--paper);
         border: 1px solid var(--border);
         border-radius: 12px;
-        padding: 16px;
+        padding: 12px;
         text-align: center;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
       }
       .row {
         margin-top: 10px;
@@ -59,20 +58,18 @@
         border: 1px solid var(--border);
         border-radius: 8px;
         padding: 8px 10px;
-        margin-bottom: 12px;
       }
       #qr {
         display: block;
         width: 180px;
         height: 180px;
-        margin: 0 auto 12px;
+        margin: 12px auto;
         border: 1px solid var(--border);
         border-radius: 6px;
       }
       .btn {
         display: block;
         width: 100%;
-        max-width: 280px;
         text-align: center;
         padding: 12px 14px;
         border: 1px solid var(--border);
@@ -81,7 +78,7 @@
         font-weight: 600;
         text-decoration: none;
         color: inherit;
-        margin-top: 8px; /* only small spacing */
+        margin-top: 12px;
       }
       .btn:active {
         filter: brightness(0.95);
@@ -110,15 +107,14 @@
     <div class="sub">E-reader friendly • no animations</div>
 
     <div class="wrap">
-      <div class="card" id="sessionBox">
-        <div id="code" class="key">----</div>
+      <div class="card" id="sessionBox" style="display: block">
+        <div class="row"><div id="code" class="key">----</div></div>
         <img id="qr" alt="QR code" />
-        <a id="downloadBtn" class="btn" target="_blank" rel="noopener">
-          Download file
-        </a>
+        <a id="downloadBtn" class="btn" target="_blank" rel="noopener"
+          >Download file</a
+        >
         <div id="status"></div>
       </div>
-
       <footer>Created by <strong>Kaung</strong> • © 2025 Sendo</footer>
     </div>
 
