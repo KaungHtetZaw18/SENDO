@@ -1,5 +1,5 @@
 import { customAlphabet } from "nanoid";
-
+import crypto from "crypto";
 // Public 4-char code (no 0,1,O,I)
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const genCode = customAlphabet(CODE_ALPHABET, 4);
@@ -81,7 +81,7 @@ export function sweepExpired() {
 }
 
 export function allSessions() {
-  return Array.from(SESSIONS.values());
+  return Array.from(sessionsById.values()); // ✅ fix map name
 }
 
 export function setSessionFile(session, fileMeta) {

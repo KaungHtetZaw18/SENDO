@@ -1,7 +1,8 @@
 (function () {
+  // ---- Config (same-origin API) ----
   var API = "";
 
-  // ----- helpers -----
+  // ---- tiny DOM helpers ----
   function $(id) {
     return document.getElementById(id);
   }
@@ -13,6 +14,7 @@
     setText("debug", t || "");
   }
 
+  // ---- minimal XHR (JSON) ----
   function xhr(method, url, body, cb) {
     try {
       var x = new XMLHttpRequest();
@@ -30,14 +32,14 @@
     }
   }
 
-  // ----- state -----
+  // ---- state ----
   var sessionId = null;
   var receiverToken = null;
   var hbTimer = null;
   var pollTimer = null;
   var beaconSent = false;
 
-  // ----- heartbeat -----
+  // ---- heartbeat ----
   function startHeartbeat() {
     stopHeartbeat();
     hbTimer = setInterval(function () {
@@ -57,7 +59,7 @@
     }
   }
 
-  // ----- polling -----
+  // ---- polling ----
   function startPoll() {
     stopPoll();
     pollTimer = setInterval(function () {
@@ -119,7 +121,7 @@
     }
   }
 
-  // ----- teardown -----
+  // ---- teardown ----
   function teardown() {
     stopHeartbeat();
     stopPoll();
@@ -128,7 +130,7 @@
     setText("status", "");
   }
 
-  // ----- disconnect beacon -----
+  // ---- disconnect beacon ----
   function sendBeaconDisconnect() {
     try {
       if (beaconSent) return;
@@ -147,12 +149,39 @@
   });
   window.addEventListener("offline", sendBeaconDisconnect);
 
-  // ----- session creation with GET-first (older engines) -----
+  // ---- init (SSR first, then XHR fallback) ----
+  function init() {
+    // If server rendered the page with a ready session, use it immediately.
+    if (window.__SESS_ID__) {
+      sessionId = String(window.__SESS_ID__ || "");
+      receiverToken = String(window.__RECV_TOKEN__ || "");
+      setText("status", "Waiting for Sender to upload…");
+
+      // Nudge QR to render on some e-ink engines
+      var qre = $("qr");
+      if (qre && qre.src) qre.src = qre.src.split("?")[0] + "?v=" + Date.now();
+
+      startHeartbeat();
+      startPoll();
+      return;
+    }
+
+    // Otherwise create client-side (GET-first for very old browsers)
+    createSessionCompat();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+
+  // ---- client-side session creation (GET-first) ----
   function createSessionCompat() {
     setText("status", "Creating session…");
     setDebug("");
 
-    // 1) GET first — friendlier to older e-ink browsers
+    // 1) GET first
     xhr("GET", "/api/session/new?v=" + Date.now(), null, function (err, x) {
       if (!err && x && x.status === 200) {
         handleSessionResponse(x);
@@ -184,6 +213,7 @@
       setDebug("JSON parse error");
       return;
     }
+
     if (!json || !json.ok) {
       setText("status", "Server error creating session.");
       return;
@@ -192,10 +222,10 @@
     sessionId = json.sessionId;
     receiverToken = json.receiverToken;
 
-    // Show code (plain black text for e-ink)
+    // Show 4-char code in plain black text
     setText("code", json.code || "----");
 
-    // Robust QR loading: cache-bust + 1 retry + force reflow trick
+    // Robust QR loading (cache-bust + one retry + reflow trick)
     var qre = $("qr");
     if (qre) {
       var tried = 0;
@@ -203,8 +233,7 @@
         qre.onerror = function () {
           if (tried < 1) {
             tried++;
-            // clear src first to force reflow on some Kobo builds
-            qre.removeAttribute("src");
+            qre.removeAttribute("src"); // force reflow on some Kobo builds
             setTimeout(setQR, 400);
           } else setDebug("QR image failed to load.");
         };
@@ -218,9 +247,4 @@
     startHeartbeat();
     startPoll();
   }
-
-  // ----- init -----
-  if (document.readyState === "loading")
-    document.addEventListener("DOMContentLoaded", createSessionCompat);
-  else createSessionCompat();
 })();
