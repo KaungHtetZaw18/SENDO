@@ -64,7 +64,6 @@
           try {
             json = JSON.parse(x.responseText);
           } catch (e) {
-            void e;
             return;
           }
 
@@ -80,7 +79,7 @@
               "?receiverToken=" +
               encodeURIComponent(receiverToken);
             qs("downloadBtn").setAttribute("href", href);
-            qs("downloadBtn").style.display = "block";
+            qs("downloadBtn").style.display = "block"; // full-width per CSS
             setStatus(
               "File ready" +
                 (json.file && json.file.name ? ": " + json.file.name : "")
@@ -129,7 +128,6 @@
         json = JSON.parse(x.responseText);
       } catch (e) {
         setStatus("Bad response.");
-        void e;
         return;
       }
 
@@ -138,7 +136,10 @@
 
       qs("code").innerHTML = json.code;
       qs("linkBox").innerHTML = json.senderLink;
-      qs("qr").src = json.qrDataUrl || "";
+
+      // Use server PNG endpoint (Kobo-friendly)
+      qs("qr").src = "/api/qr/" + encodeURIComponent(sessionId) + ".png";
+
       qs("sessionBox").style.display = "block";
       qs("startBtn").style.display = "none";
       qs("disconnectBtn").style.display = "inline-block";
@@ -161,14 +162,11 @@
     );
   }
 
-  // wire up
   function ready() {
     qs("startBtn").onclick = createSession;
     qs("disconnectBtn").onclick = disconnect;
   }
-  if (document.readyState === "loading") {
+  if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", ready);
-  } else {
-    ready();
-  }
+  else ready();
 })();
