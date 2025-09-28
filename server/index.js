@@ -187,12 +187,10 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
 
   if (!isAllowedEbook(req.file.originalname)) {
     if (req.file?.path) await safeUnlink(req.file.path);
-    return res
-      .status(415)
-      .json({
-        ok: false,
-        error: "Only .epub .mobi .azw .azw3 .pdf .txt are allowed",
-      });
+    return res.status(415).json({
+      ok: false,
+      error: "Only .epub .mobi .azw .azw3 .pdf .txt are allowed",
+    });
   }
 
   if (s.file?.path) await safeUnlink(s.file.path); // replace old
@@ -321,7 +319,36 @@ if (SERVE_WEB) {
   // SPA fallback (non-API)
   app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(indexPath));
 }
+// PNG QR for e-readers (more reliable than data-URLs)
+app.get("/api/qr/:id.png", async (req, res) => {
+  const s = getSessionById(String(req.params.id));
+  if (!s) return res.status(404).end();
 
+  // build origin the same way you do in /api/session
+  const proto =
+    (req.headers["x-forwarded-proto"] &&
+      String(req.headers["x-forwarded-proto"]).split(",")[0]) ||
+    req.protocol ||
+    "http";
+  const host = req.headers["x-forwarded-host"] || req.headers.host;
+  const origin = host ? `${proto}://${host}` : process.env.FRONTEND_BASE || "";
+
+  const senderLink = `${origin}/sender?sessionId=${encodeURIComponent(
+    s.id
+  )}&t=${encodeURIComponent(s.senderToken)}`;
+
+  try {
+    const png = await QRCode.toBuffer(senderLink, {
+      type: "png",
+      scale: 6,
+      margin: 1,
+    });
+    res.setHeader("Content-Type", "image/png");
+    res.send(png);
+  } catch {
+    res.status(500).end();
+  }
+});
 /* ----------------------- Start ----------------------- */
 app.listen(PORT, () => {
   console.log(`Sendo server listening on :${PORT}  (SERVE_WEB=${SERVE_WEB})`);

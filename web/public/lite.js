@@ -73,6 +73,7 @@
           }
 
           if (j.hasFile && rTok) {
+            // Kobo tends to prefer a direct GET to the same origin
             var href =
               location.origin +
               "/api/download/" +
@@ -81,8 +82,6 @@
               encodeURIComponent(rTok);
             var a = el("downloadBtn");
             a.href = href;
-            a.removeAttribute("target");
-            a.removeAttribute("rel");
             a.style.display = "block";
             setStatus(
               "File ready" + (j.file && j.file.name ? ": " + j.file.name : "")
@@ -109,7 +108,28 @@
     if (reason === "sender") s = "Ended by Sender.";
     else if (reason === "receiver") s = "Ended by Receiver.";
     setStatus(s);
-    // keep the box visible with the message so user sees what happened
+  }
+
+  // auto-close the session when the page is left (djazz-style)
+  function autoDisconnect() {
+    if (!sid) return;
+    try {
+      navigator.sendBeacon &&
+        navigator.sendBeacon(
+          "/api/disconnect",
+          new Blob([JSON.stringify({ sessionId: sid, by: "receiver" })], {
+            type: "application/json",
+          })
+        );
+    } catch (_e) {
+      // fallback; fire-and-forget
+      xhr(
+        "POST",
+        "/api/disconnect",
+        { sessionId: sid, by: "receiver" },
+        function () {}
+      );
+    }
   }
 
   function createSession() {
@@ -135,7 +155,7 @@
       rTok = j.receiverToken;
 
       el("code").textContent = j.code;
-      // ✅ Use the server PNG endpoint for QR (more reliable on Kobo)
+      // Use the new PNG endpoint (works on Kobo)
       el("qr").src = "/api/qr/" + encodeURIComponent(sid) + ".png";
 
       el("sessionBox").style.display = "block";
@@ -146,28 +166,22 @@
     });
   }
 
-  function disconnect(ev) {
-    if (ev) ev.preventDefault();
-    if (!sid) {
-      setStatus("Ended by Receiver.");
-      return;
-    }
-    xhr(
-      "POST",
-      "/api/disconnect",
-      { sessionId: sid, by: "receiver" },
+  function ready() {
+    // auto-create on load
+    createSession();
+
+    // auto-disconnect when navigating away (unload/pagehide better for e-ink)
+    window.addEventListener("pagehide", autoDisconnect);
+    window.addEventListener("beforeunload", autoDisconnect);
+    document.addEventListener(
+      "visibilitychange",
       function () {
-        setStatus("Ended by Receiver.");
-        // keep UI on screen; sender will see the disconnect too
-      }
+        if (document.visibilityState === "hidden") autoDisconnect();
+      },
+      { passive: true }
     );
   }
 
-  function ready() {
-    el("disconnectBtn").onclick = disconnect;
-    // Auto-create session on load so Kobo users see code/QR immediately
-    createSession();
-  }
   if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", ready);
   else ready();

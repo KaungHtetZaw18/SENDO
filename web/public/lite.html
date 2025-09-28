@@ -5,13 +5,13 @@
     <title>Sendo — Lite Receiver</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
-      /* Compact, Kobo-friendly, serif/italic titles, high-contrast buttons */
+      /* Kobo-friendly compact serif layout, high-contrast large button */
       :root {
         --ink: #000;
         --muted: #444;
         --border: #cfcfcf;
         --paper: #fff;
-        --btn: #ececec;
+        --btn: #eaeaea;
       }
       * {
         box-sizing: border-box;
@@ -38,13 +38,13 @@
         font-style: italic;
         font-weight: 500;
         text-align: center;
-        margin: 6px 0 10px;
+        margin: 6px 0 6px;
       }
       .muted {
         color: var(--muted);
         font-size: 12px;
         text-align: center;
-        margin-bottom: 8px;
+        margin: 0 0 8px;
       }
 
       .card {
@@ -62,8 +62,8 @@
 
       .code {
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        font-size: 28px;
-        letter-spacing: 8px;
+        font-size: 26px;
+        letter-spacing: 6px;
         text-align: center;
         border: 1px solid var(--border);
         border-radius: 8px;
@@ -72,9 +72,9 @@
 
       #qr {
         display: block;
-        width: 160px;
-        height: 160px;
-        margin: 10px auto;
+        width: 150px;
+        height: 150px;
+        margin: 8px auto;
         border: 1px solid var(--border);
         border-radius: 6px;
       }
@@ -96,33 +96,14 @@
         background: var(--btn);
       }
       .btn:active {
-        background: #e2e2e2;
+        background: #dedede;
       }
 
-      .row {
-        margin: 6px 0;
-      }
       .footer {
         text-align: center;
         color: var(--muted);
         font-size: 12px;
-        margin-top: 10px;
-      }
-
-      /* Slightly larger on narrow phones but keep compact overall */
-      @media (max-width: 380px) {
-        .code {
-          font-size: 26px;
-          letter-spacing: 6px;
-        }
-        #qr {
-          width: 150px;
-          height: 150px;
-        }
-        .btn {
-          font-size: 17px;
-          padding: 11px;
-        }
+        margin-top: 8px;
       }
     </style>
   </head>
@@ -137,10 +118,17 @@
 
         <img id="qr" alt="QR code" />
 
-        <a id="downloadBtn" class="btn" href="#" style="display: none"
-          >Download file</a
+        <!-- Big, clearly tappable button -->
+        <a
+          id="downloadBtn"
+          class="btn"
+          href="#"
+          role="button"
+          aria-label="Download file"
+          style="display: none"
         >
-        <a id="disconnectBtn" class="btn" href="#">Disconnect</a>
+          Download file
+        </a>
 
         <div id="status" class="muted" style="margin-top: 6px">…</div>
       </div>
