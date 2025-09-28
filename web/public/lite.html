@@ -6,10 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       :root {
-        --bg: #ffffff;
-        --ink: #000000;
-        --muted: #444444;
-        --border: #cccccc;
+        --bg: #fff;
+        --ink: #000;
+        --muted: #444;
+        --border: #ccc;
       }
       * {
         box-sizing: border-box;
@@ -25,13 +25,10 @@
         font-family: Arial, Helvetica, sans-serif;
         padding: 10px;
       }
-
-      /* Keep width small so Kobo fits everything without scrolling */
       .wrap {
         max-width: 420px;
         margin: 0 auto;
       }
-
       .h1 {
         font-size: 18px;
         font-weight: 700;
@@ -44,13 +41,11 @@
         text-align: center;
         margin-bottom: 8px;
       }
-
       .box {
         border: 1px solid var(--border);
         border-radius: 8px;
         padding: 8px;
       }
-
       .row {
         margin: 8px 0;
       }
@@ -63,7 +58,6 @@
         font-family: ui-monospace, monospace;
         word-wrap: break-word;
       }
-
       .code {
         font-size: 22px;
         letter-spacing: 4px;
@@ -75,8 +69,6 @@
         margin: 8px auto;
         border: 1px solid var(--border);
       }
-
-      /* Minimal, no filled boxes */
       .btn {
         display: block;
         width: 100%;
@@ -93,15 +85,12 @@
       .btn.ghost {
         border-color: var(--border);
       }
-
-      /* Hide sections initially */
       #sessionBox {
         display: none;
       }
       #downloadForm {
         display: none;
       }
-
       .footer {
         text-align: center;
         color: var(--muted);
@@ -120,7 +109,7 @@
           <button id="startBtn" class="btn">Start as Receiver</button>
           <button
             id="disconnectBtn"
-            class="btn ghost"
+            className="btn ghost"
             style="display: none; margin-top: 6px"
           >
             Disconnect
@@ -129,24 +118,19 @@
 
         <div id="sessionBox">
           <div class="row">
-            <div class="label">Connection Code</div>
+            <div class="label">Code</div>
             <div id="code" class="mono code">----</div>
-          </div>
-
-          <div class="row">
-            <div class="label">Sender Link</div>
-            <div id="linkBox" class="mono"></div>
           </div>
 
           <img id="qr" alt="QR code" />
 
-          <!-- Kobo-safe: same-tab GET with hidden token -->
+          <!-- Kobo-safe: same-tab GET + hidden token -->
           <form id="downloadForm" method="GET" class="row">
             <input type="hidden" name="receiverToken" id="rt" value="" />
             <button type="submit" class="btn">Download file</button>
           </form>
 
-          <div id="status" class="sub" style="margin-top: 6px"></div>
+          <div id="status" class="sub"></div>
         </div>
       </div>
 

@@ -1,3 +1,4 @@
+// web/public/lite.js
 (function () {
   function xhr(method, url, body, cb) {
     try {
@@ -73,7 +74,6 @@
           }
 
           if (json.hasFile && receiverToken) {
-            // Configure same-tab GET form with hidden token (Kobo-friendly)
             var form = qs("downloadForm");
             form.setAttribute(
               "action",
@@ -81,7 +81,6 @@
             );
             qs("rt").value = receiverToken;
             form.style.display = "block";
-
             setStatus(
               "File ready" +
                 (json.file && json.file.name ? ": " + json.file.name : "")
@@ -137,8 +136,6 @@
       receiverToken = json.receiverToken;
 
       qs("code").innerHTML = json.code;
-      qs("linkBox").innerHTML = json.senderLink;
-      // Kobo-friendly PNG QR (no data: URIs)
       qs("qr").src = "/api/qr/" + encodeURIComponent(sessionId) + ".png";
 
       qs("sessionBox").style.display = "block";
