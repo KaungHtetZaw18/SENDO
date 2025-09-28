@@ -355,11 +355,25 @@ setInterval(() => sweepExpired(), 60 * 1000);
 // receiver already sends a 'disconnect' beacon on leave, and TTL handles the rest.
 
 /* ----------------------- Serve frontend (plain files) ----------------------- */
+// Serve static frontend (no React build — plain files)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.resolve(__dirname, "../web/public");
 
-app.use(express.static(publicDir));
+// No-cache static for e-readers (html/js/css/png)
+app.use(
+  express.static(publicDir, {
+    setHeaders: (res, filePath) => {
+      // Turn off caching so Kobo/Kindle always fetch latest
+      res.setHeader(
+        "Cache-Control",
+        "no-store, no-cache, must-revalidate, proxy-revalidate"
+      );
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+    },
+  })
+);
 
 // Receiver (lite)
 app.get("/receiver", (_req, res) => {
@@ -371,7 +385,7 @@ app.get("/sender", (_req, res) => {
   res.sendFile(path.join(publicDir, "sender.html"));
 });
 
-// Landing -> receiver (your minimal landing is the receiver page)
+// Landing
 app.get("/", (_req, res) => {
   res.sendFile(path.join(publicDir, "index.html"));
 });

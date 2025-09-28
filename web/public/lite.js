@@ -1,8 +1,8 @@
 (function () {
-  // Same-origin API
+  // Same-origin API (works locally and in prod)
   var API = "";
 
-  // ---- helpers ----
+  // ---------- helpers ----------
   function $(id) {
     return document.getElementById(id);
   }
@@ -28,14 +28,14 @@
     }
   }
 
-  // ---- state ----
+  // ---------- state ----------
   var sessionId = null;
   var receiverToken = null;
   var hbTimer = null;
   var pollTimer = null;
   var beaconSent = false;
 
-  // ---- heartbeat ----
+  // ---------- heartbeat ----------
   function startHeartbeat() {
     stopHeartbeat();
     hbTimer = setInterval(function () {
@@ -46,7 +46,7 @@
         { sessionId: sessionId, role: "receiver" },
         function () {}
       );
-    }, 15000);
+    }, 15000); // 15s = snappy liveness for short TTLs
   }
   function stopHeartbeat() {
     if (hbTimer) {
@@ -55,7 +55,7 @@
     }
   }
 
-  // ---- polling ----
+  // ---------- polling ----------
   function startPoll() {
     stopPoll();
     pollTimer = setInterval(function () {
@@ -102,7 +102,8 @@
                 (json.file && json.file.name ? ": " + json.file.name : "")
             );
           } else {
-            if ($("downloadBtn")) $("downloadBtn").style.display = "none";
+            var b = $("downloadBtn");
+            if (b) b.style.display = "none";
             setText("status", "Waiting for Sender to upload…");
           }
         }
@@ -116,7 +117,7 @@
     }
   }
 
-  // ---- teardown ----
+  // ---------- teardown ----------
   function teardown() {
     stopHeartbeat();
     stopPoll();
@@ -125,7 +126,7 @@
     setText("status", "");
   }
 
-  // ---- disconnect beacon on leave/offline ----
+  // ---------- disconnect on leave/offline (beacon) ----------
   function sendBeaconDisconnect() {
     try {
       if (beaconSent) return;
@@ -144,26 +145,22 @@
   });
   window.addEventListener("offline", sendBeaconDisconnect);
 
-  // ---- session creation (GET first, POST fallback) ----
+  // ---------- create session (GET first; POST fallback) ----------
   function createSessionCompat() {
     setText("status", "Creating session…");
 
-    // 1) Try GET (works better on many e-readers)
+    // (1) Try GET: many e-readers handle this better
     xhr("GET", "/api/session/new", null, function (err, x) {
       if (!err && x && x.status === 200) {
         return handleSessionResponse(x);
       }
 
-      // 2) Fallback: JSON POST
+      // (2) Fallback to POST JSON
       xhr("POST", "/api/session", { role: "receiver" }, function (err2, x2) {
         if (!err2 && x2 && x2.status === 200) {
           return handleSessionResponse(x2);
         }
-
-        // 3) Show a clear message
-        var msg = "Failed to create session.";
-        if (err || err2) msg += " Network error.";
-        setText("status", msg);
+        setText("status", "Failed to create session.");
       });
     });
   }
@@ -185,18 +182,21 @@
     sessionId = json.sessionId;
     receiverToken = json.receiverToken;
 
-    setText("code", json.code); // plain black text key
+    // show 4-char key
+    setText("code", json.code);
+
+    // show QR (PNG) with cache-buster for Kobo/Kindle
     var qre = $("qr");
     if (qre)
       qre.src =
-        "/api/qr/" + encodeURIComponent(sessionId) + ".png?v=" + Date.now(); // cache-bust
+        "/api/qr/" + encodeURIComponent(sessionId) + ".png?v=" + Date.now();
 
     setText("status", "Waiting for Sender to upload…");
     startHeartbeat();
     startPoll();
   }
 
-  // ---- init ----
+  // ---------- init ----------
   if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", createSessionCompat);
   else createSessionCompat();
