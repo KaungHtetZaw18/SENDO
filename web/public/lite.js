@@ -16,31 +16,31 @@
       cb(e, null);
     }
   }
-  function el(id) {
+  function qs(id) {
     return document.getElementById(id);
   }
   function setStatus(t) {
-    el("status").innerHTML = t || "";
+    qs("status").textContent = t || "";
   }
 
-  var sid = null;
-  var rTok = null;
+  var sessionId = null;
+  var receiverToken = null;
   var pollTimer = null;
   var hbTimer = null;
 
-  function startHB() {
-    stopHB();
+  function startHeartbeat() {
+    stopHeartbeat();
     hbTimer = setInterval(function () {
-      if (!sid) return;
+      if (!sessionId) return;
       xhr(
         "POST",
         "/api/heartbeat",
-        { sessionId: sid, role: "receiver" },
+        { sessionId: sessionId, role: "receiver" },
         function () {}
       );
     }, 30000);
   }
-  function stopHB() {
+  function stopHeartbeat() {
     if (hbTimer) {
       clearInterval(hbTimer);
       hbTimer = null;
@@ -50,10 +50,10 @@
   function startPoll() {
     stopPoll();
     pollTimer = setInterval(function () {
-      if (!sid) return;
+      if (!sessionId) return;
       xhr(
         "GET",
-        "/api/session/" + encodeURIComponent(sid) + "/status",
+        "/api/session/" + encodeURIComponent(sessionId) + "/status",
         null,
         function (err, x) {
           if (err || !x) return;
@@ -61,28 +61,37 @@
             teardown("ttl");
             return;
           }
-          var j;
+          var json;
           try {
-            j = JSON.parse(x.responseText);
-          } catch (_e) {
+            json = JSON.parse(x.responseText);
+          } catch (e) {
             return;
           }
 
-          if (j.closed) {
-            teardown(j.closedBy || "ttl");
+          if (json.closed) {
+            teardown(json.closedBy || "ttl");
             return;
           }
 
-          if (j.hasFile && rTok) {
-            var dl = el("downloadLink");
-            dl.href =
-              "/dl/" + encodeURIComponent(sid) + "/" + encodeURIComponent(rTok); // path-based
-            dl.style.display = "block";
+          if (json.hasFile && receiverToken) {
+            var href =
+              location.origin +
+              "/api/download/" +
+              encodeURIComponent(sessionId) +
+              "?receiverToken=" +
+              encodeURIComponent(receiverToken);
+
+            var a = qs("downloadBtn");
+            a.setAttribute("href", href);
+            a.removeAttribute("target");
+            a.removeAttribute("rel");
+            a.style.display = "block";
             setStatus(
-              "File ready" + (j.file && j.file.name ? ": " + j.file.name : "")
+              "File ready" +
+                (json.file && json.file.name ? ": " + json.file.name : "")
             );
           } else {
-            el("downloadLink").style.display = "none";
+            qs("downloadBtn").style.display = "none";
             setStatus("Waiting for Sender to upload…");
           }
         }
@@ -98,13 +107,12 @@
 
   function teardown(reason) {
     stopPoll();
-    stopHB();
-    el("startBtn").style.display = "block";
-    el("disconnectBtn").style.display = "none";
-    el("sessionBox").style.display = "none";
-    el("downloadLink").style.display = "none";
-    sid = null;
-    rTok = null;
+    stopHeartbeat();
+    qs("startBtn") && (qs("startBtn").style.display = "block");
+    qs("disconnectBtn").style.display = "none";
+    sessionId = null;
+    receiverToken = null;
+
     if (reason === "sender") setStatus("Ended by Sender.");
     else if (reason === "receiver") setStatus("Ended by Receiver.");
     else setStatus("Session expired.");
@@ -121,37 +129,35 @@
         setStatus("Failed to create session.");
         return;
       }
-      var j;
+      var json;
       try {
-        j = JSON.parse(x.responseText);
-      } catch (_e) {
+        json = JSON.parse(x.responseText);
+      } catch (e) {
         setStatus("Bad response.");
         return;
       }
 
-      sid = j.sessionId;
-      rTok = j.receiverToken;
+      sessionId = json.sessionId;
+      receiverToken = json.receiverToken;
 
-      el("code").innerHTML = j.code;
-      // Use server-made PNG so no client QR library is needed
-      el("qr").src = "/api/qr/" + encodeURIComponent(sid) + ".png";
+      qs("code").textContent = json.code;
+      qs("qr").src = json.qrDataUrl || "";
 
-      el("sessionBox").style.display = "block";
-      el("startBtn").style.display = "none";
-      el("disconnectBtn").style.display = "block";
+      if (qs("startBtn")) qs("startBtn").style.display = "none";
+      qs("disconnectBtn").style.display = "block";
       setStatus("Waiting for Sender to upload…");
 
-      startHB();
+      startHeartbeat();
       startPoll();
     });
   }
 
   function disconnect() {
-    if (!sid) return teardown("receiver");
+    if (!sessionId) return teardown("receiver");
     xhr(
       "POST",
       "/api/disconnect",
-      { sessionId: sid, by: "receiver" },
+      { sessionId: sessionId, by: "receiver" },
       function () {
         teardown("receiver");
       }
@@ -159,16 +165,13 @@
   }
 
   function ready() {
-    el("startBtn").onclick = function (e) {
-      e.preventDefault();
-      createSession();
-    };
-    el("disconnectBtn").onclick = function (e) {
-      e.preventDefault();
-      disconnect();
-    };
+    var startBtn = qs("startBtn");
+    if (startBtn) startBtn.onclick = createSession;
+    qs("disconnectBtn").onclick = disconnect;
   }
-  if (document.readyState === "loading")
+  if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", ready);
-  else ready();
+  } else {
+    ready();
+  }
 })();
