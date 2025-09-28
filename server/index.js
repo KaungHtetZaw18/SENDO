@@ -198,12 +198,10 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ ok: false, error: "No file" });
   if (!isAllowedEbook(req.file.originalname)) {
     if (req.file?.path) await safeUnlink(req.file.path);
-    return res
-      .status(415)
-      .json({
-        ok: false,
-        error: "Only e-book files allowed (.epub .mobi .azw .azw3 .pdf .txt)",
-      });
+    return res.status(415).json({
+      ok: false,
+      error: "Only e-book files allowed (.epub .mobi .azw .azw3 .pdf .txt)",
+    });
   }
 
   if (s.file?.path) await safeUnlink(s.file.path);
@@ -224,13 +222,15 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
   });
 });
 
-/* ----------------------- Download (Receiver) ----------------------- */
-// Kobo-safe: keep file after download; it will be deleted on replace/disconnect/expiry
-app.get("/api/download/:sessionId", async (req, res) => {
-  const s = getSessionById(String(req.params.sessionId));
+// --- PATH-BASED DOWNLOAD (recommended for e-readers) ---
+app.get("/dl/:sessionId/:token", async (req, res) => {
+  const sessionId = String(req.params.sessionId);
+  const token = String(req.params.token);
+
+  const s = getSessionById(sessionId);
   if (!s)
     return res.status(404).json({ ok: false, error: "Session not found" });
-  if (s.receiverToken !== req.query.receiverToken) {
+  if (s.receiverToken !== token) {
     return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
   if (!s.file?.path || !fs.existsSync(s.file.path)) {
@@ -238,6 +238,49 @@ app.get("/api/download/:sessionId", async (req, res) => {
   }
 
   touchSession(s, SESSION_TTL_SECONDS);
+
+  // Content headers – same window "Save file" prompt
+  res.setHeader("Content-Type", s.file.type || "application/octet-stream");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename*=UTF-8''${encodeURIComponent(s.file.name)}`
+  );
+
+  // Stream out
+  const stream = fs.createReadStream(s.file.path);
+  stream.pipe(res);
+
+  // ⚠️ Kobo/Kindle are slow: delete a bit later, not immediately.
+  res.on("finish", () => {
+    setTimeout(async () => {
+      try {
+        if (s.file?.path && fs.existsSync(s.file.path)) {
+          await safeUnlink(s.file.path);
+        }
+        clearSessionFile(s);
+        touchSession(s, SESSION_TTL_SECONDS);
+      } catch {}
+    }, 30_000); // 30 seconds grace period
+  });
+});
+
+// --- Existing query-based route kept for compatibility ---
+app.get("/api/download/:sessionId", async (req, res) => {
+  const sessionId = String(req.params.sessionId);
+  const token = String(req.query.receiverToken || "");
+
+  const s = getSessionById(sessionId);
+  if (!s)
+    return res.status(404).json({ ok: false, error: "Session not found" });
+  if (s.receiverToken !== token) {
+    return res.status(401).json({ ok: false, error: "Unauthorized" });
+  }
+  if (!s.file?.path || !fs.existsSync(s.file.path)) {
+    return res.status(404).json({ ok: false, error: "No file" });
+  }
+
+  touchSession(s, SESSION_TTL_SECONDS);
+
   res.setHeader("Content-Type", s.file.type || "application/octet-stream");
   res.setHeader(
     "Content-Disposition",
@@ -247,8 +290,18 @@ app.get("/api/download/:sessionId", async (req, res) => {
   const stream = fs.createReadStream(s.file.path);
   stream.pipe(res);
 
-  // IMPORTANT: do NOT delete on 'close' for Kobo reliability
-  // Deletion happens on: new upload, disconnect, or sweepExpired
+  // Same grace period here too
+  res.on("finish", () => {
+    setTimeout(async () => {
+      try {
+        if (s.file?.path && fs.existsSync(s.file.path)) {
+          await safeUnlink(s.file.path);
+        }
+        clearSessionFile(s);
+        touchSession(s, SESSION_TTL_SECONDS);
+      } catch {}
+    }, 30_000);
+  });
 });
 
 /* ----------------------- Heartbeat ----------------------- */

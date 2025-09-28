@@ -16,31 +16,31 @@
       cb(e, null);
     }
   }
-  function qs(id) {
+  function el(id) {
     return document.getElementById(id);
   }
   function setStatus(t) {
-    qs("status").innerHTML = t || "";
+    el("status").innerHTML = t || "";
   }
 
-  var sessionId = null;
-  var receiverToken = null;
+  var sid = null;
+  var rTok = null;
   var pollTimer = null;
   var hbTimer = null;
 
-  function startHeartbeat() {
-    stopHeartbeat();
+  function startHB() {
+    stopHB();
     hbTimer = setInterval(function () {
-      if (!sessionId) return;
+      if (!sid) return;
       xhr(
         "POST",
         "/api/heartbeat",
-        { sessionId: sessionId, role: "receiver" },
+        { sessionId: sid, role: "receiver" },
         function () {}
       );
     }, 30000);
   }
-  function stopHeartbeat() {
+  function stopHB() {
     if (hbTimer) {
       clearInterval(hbTimer);
       hbTimer = null;
@@ -50,10 +50,10 @@
   function startPoll() {
     stopPoll();
     pollTimer = setInterval(function () {
-      if (!sessionId) return;
+      if (!sid) return;
       xhr(
         "GET",
-        "/api/session/" + encodeURIComponent(sessionId) + "/status",
+        "/api/session/" + encodeURIComponent(sid) + "/status",
         null,
         function (err, x) {
           if (err || !x) return;
@@ -61,32 +61,28 @@
             teardown("ttl");
             return;
           }
-          var json;
+          var j;
           try {
-            json = JSON.parse(x.responseText);
+            j = JSON.parse(x.responseText);
           } catch (_e) {
             return;
           }
 
-          if (json.closed) {
-            teardown(json.closedBy || "ttl");
+          if (j.closed) {
+            teardown(j.closedBy || "ttl");
             return;
           }
 
-          if (json.hasFile && receiverToken) {
-            var form = qs("downloadForm");
-            form.setAttribute(
-              "action",
-              "/api/download/" + encodeURIComponent(sessionId)
-            );
-            qs("rt").value = receiverToken;
-            form.style.display = "block";
+          if (j.hasFile && rTok) {
+            var dl = el("downloadLink");
+            dl.href =
+              "/dl/" + encodeURIComponent(sid) + "/" + encodeURIComponent(rTok);
+            dl.style.display = "block";
             setStatus(
-              "File ready" +
-                (json.file && json.file.name ? ": " + json.file.name : "")
+              "File ready" + (j.file && j.file.name ? ": " + j.file.name : "")
             );
           } else {
-            qs("downloadForm").style.display = "none";
+            el("downloadLink").style.display = "none";
             setStatus("Waiting for Sender to upload…");
           }
         }
@@ -102,18 +98,20 @@
 
   function teardown(reason) {
     stopPoll();
-    stopHeartbeat();
-    qs("startBtn").style.display = "block";
-    qs("disconnectBtn").style.display = "none";
-    qs("sessionBox").style.display = "none";
-    sessionId = null;
-    receiverToken = null;
+    stopHB();
+    el("startBtn").style.display = "block";
+    el("disconnectBtn").style.display = "none";
+    el("sessionBox").style.display = "none";
+    el("downloadLink").style.display = "none";
+    sid = null;
+    rTok = null;
     if (reason === "sender") setStatus("Ended by Sender.");
     else if (reason === "receiver") setStatus("Ended by Receiver.");
     else setStatus("Session expired.");
   }
 
-  function createSession() {
+  function createSession(e) {
+    if (e && e.preventDefault) e.preventDefault();
     setStatus("Creating session…");
     xhr("POST", "/api/session", { role: "receiver" }, function (err, x) {
       if (err || !x) {
@@ -124,36 +122,37 @@
         setStatus("Failed to create session.");
         return;
       }
-      var json;
+      var j;
       try {
-        json = JSON.parse(x.responseText);
+        j = JSON.parse(x.responseText);
       } catch (_e) {
         setStatus("Bad response.");
         return;
       }
 
-      sessionId = json.sessionId;
-      receiverToken = json.receiverToken;
+      sid = j.sessionId;
+      rTok = j.receiverToken;
 
-      qs("code").innerHTML = json.code;
-      qs("qr").src = "/api/qr/" + encodeURIComponent(sessionId) + ".png";
+      el("code").innerHTML = j.code;
+      el("qr").src = "/api/qr/" + encodeURIComponent(sid) + ".png";
 
-      qs("sessionBox").style.display = "block";
-      qs("startBtn").style.display = "none";
-      qs("disconnectBtn").style.display = "block";
+      el("sessionBox").style.display = "block";
+      el("startBtn").style.display = "none";
+      el("disconnectBtn").style.display = "block";
       setStatus("Waiting for Sender to upload…");
 
-      startHeartbeat();
+      startHB();
       startPoll();
     });
   }
 
-  function disconnect() {
-    if (!sessionId) return teardown("receiver");
+  function disconnect(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!sid) return teardown("receiver");
     xhr(
       "POST",
       "/api/disconnect",
-      { sessionId: sessionId, by: "receiver" },
+      { sessionId: sid, by: "receiver" },
       function () {
         teardown("receiver");
       }
@@ -161,8 +160,8 @@
   }
 
   function ready() {
-    qs("startBtn").onclick = createSession;
-    qs("disconnectBtn").onclick = disconnect;
+    el("startBtn").onclick = createSession;
+    el("disconnectBtn").onclick = disconnect;
   }
   if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", ready);
