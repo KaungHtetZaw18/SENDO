@@ -119,28 +119,34 @@ body {
   border: 1px solid var(--border);
   border-radius: 12px;
   font-size: 16px;
+  background: #fff; /* white background */
+  color: #000; /* black text */
 }
 .btn {
   display: block;
   width: 100%;
   padding: 14px 16px;
   text-align: center;
-  font-weight: 600;
-  background: var(--accent);
-  color: #fff;
-  border: 1px solid #000;
+  font-weight: 700; /* bold */
+  background: #f2f2f2; /* light gray so it’s visible on e-ink */
+  color: #000; /* black text */
+  border: 1px solid #000; /* solid black border */
   border-radius: 12px;
   text-decoration: none;
   cursor: pointer;
 }
+
+/* Disabled state */
 .btn[disabled] {
-  opacity: 0.6;
+  opacity: 0.5;
   pointer-events: none;
 }
+
+/* Secondary/ghost button */
 .btn.ghost {
-  background: #eee;
-  color: var(--ink);
-  border-color: var(--border);
+  background: #fff; /* plain white */
+  color: #000; /* black text */
+  border: 1px solid #000;
 }
 .footer {
   margin-top: 24px;
