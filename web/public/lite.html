@@ -13,6 +13,14 @@
         --border: #bbb;
         --paper: #fff;
       }
+
+      /* ✅ fix overflow by switching to border-box everywhere */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
       html,
       body {
         margin: 0;
@@ -35,6 +43,7 @@
         font-size: 12px;
         margin-bottom: 12px;
       }
+
       .wrap {
         max-width: 480px;
         margin: 0 auto 28px;
@@ -46,6 +55,8 @@
         border-radius: 12px;
         padding: 12px;
         text-align: center;
+        max-width: 100%;
+        overflow: hidden; /* guard against overflow */
       }
       .row {
         margin-top: 10px;
@@ -67,9 +78,12 @@
         border: 1px solid var(--border);
         border-radius: 6px;
       }
+
+      /* ✅ button stays inside the card */
       .btn {
         display: block;
         width: 100%;
+        max-width: 100%;
         text-align: center;
         padding: 12px 14px;
         border: 1px solid var(--border);
@@ -79,10 +93,12 @@
         text-decoration: none;
         color: inherit;
         margin-top: 12px;
+        cursor: pointer;
       }
       .btn:active {
         filter: brightness(0.95);
       }
+
       #downloadBtn {
         display: none;
       }
@@ -110,11 +126,12 @@
       <div class="card" id="sessionBox" style="display: block">
         <div class="row"><div id="code" class="key">----</div></div>
         <img id="qr" alt="QR code" />
-        <a id="downloadBtn" class="btn" target="_blank" rel="noopener"
-          >Download file</a
-        >
+        <a id="downloadBtn" class="btn" target="_blank" rel="noopener">
+          Download file
+        </a>
         <div id="status"></div>
       </div>
+
       <footer>Created by <strong>Kaung</strong> • © 2025 Sendo</footer>
     </div>
 

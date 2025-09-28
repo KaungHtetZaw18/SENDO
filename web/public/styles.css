@@ -1,10 +1,65 @@
-/* High-contrast, serif-ish for receiver; clean UI for sender too */
 :root {
-  --ink: #000;
-  --muted: #444;
-  --border: #cfcfcf;
+  --ink: #111;
+  --muted: #666;
+  --border: #d9d9d9;
   --paper: #fff;
-  --btn: #eaeaea;
+  --bg: #f6f6f6;
+  --accent: #111;
+}
+/* ===== Sender dark theme (screenshot style) ===== */
+.theme-dark {
+  --ink: #d6dee6;
+  --muted: #8aa0b6;
+  --border: #1c2430;
+  --paper: #0f141c;
+  --bg: #0b0f14;
+  --accent: #0b5fff; /* primary button */
+}
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+/* Dark buttons */
+.theme-dark .btn {
+  background: var(--accent);
+  border-color: #0b3dcc;
+  color: #fff;
+}
+.theme-dark .btn.ghost {
+  background: #121821;
+  color: var(--ink);
+  border-color: var(--border);
+}
+.theme-dark .input {
+  background: #0d131b;
+  color: var(--ink);
+}
+.theme-dark .card {
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* “How it works” block inside the card */
+.hw {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  margin-top: 14px;
+}
+.hw h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.hw ul {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.5;
+}
+.hw li {
+  margin: 4px 0;
+}
+.small {
+  font-size: 12px;
 }
 * {
   box-sizing: border-box;
@@ -13,104 +68,116 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: #fff;
+  background: var(--bg);
   color: var(--ink);
-  -webkit-text-size-adjust: 100%;
-}
-body {
-  font-family: Georgia, "Times New Roman", Times, serif;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 }
 
+/* Layout */
 .wrap {
-  max-width: 480px;
+  max-width: 720px;
   margin: 0 auto;
-  padding: 12px;
+  padding: 24px 16px;
 }
 .title {
   font-size: 24px;
-  font-style: italic;
-  font-weight: 600;
-  text-align: center;
-  margin: 8px 0 6px;
+  margin: 8px 0 4px;
 }
 .center {
   text-align: center;
 }
+
+/* Cards & text */
+.card {
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  margin: 12px 0;
+}
 .muted {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
 }
-
-.card {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px;
-  margin-top: 10px;
+.mono {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
 }
-
-.label {
-  font-size: 12px;
-  color: var(--muted);
-  margin: 6px 0 4px;
+.row {
+  margin: 10px 0;
 }
-.input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 16px;
-}
-.stack > * {
+.info {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink);
   margin-top: 8px;
 }
 
+/* Inputs & buttons */
+.input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 16px;
+}
 .btn {
   display: block;
   width: 100%;
+  padding: 14px 16px;
   text-align: center;
+  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid #000;
+  border-radius: 12px;
   text-decoration: none;
-  font-size: 18px;
-  font-style: italic;
-  font-weight: 700;
-  font-family: inherit;
-  padding: 12px;
-  margin-top: 8px;
-  border-radius: 8px;
-  border: 2px solid var(--ink);
-  color: var(--ink);
-  background: var(--btn);
+  cursor: pointer;
 }
-.btn:active {
-  background: #dedede;
+.btn[disabled] {
+  opacity: 0.6;
+  pointer-events: none;
 }
 .btn.ghost {
-  border-color: #777;
+  background: #eee;
+  color: var(--ink);
+  border-color: var(--border);
+}
+.footer {
+  margin-top: 24px;
+  color: #333;
+  font-size: 13px;
+  text-align: center;
+  font-weight: 500;
 }
 
-.code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 26px;
-  letter-spacing: 6px;
+/* Receiver lite bits */
+.key {
+  letter-spacing: 8px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 24px;
   text-align: center;
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 8px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
 }
-.qr {
+#qr {
   display: block;
-  width: 150px;
-  height: 150px;
-  margin: 8px auto;
+  width: 180px;
+  height: 180px;
+  margin: 0 auto 12px;
   border: 1px solid var(--border);
   border-radius: 6px;
 }
-
-.footer {
+#status {
   text-align: center;
   color: var(--muted);
   font-size: 12px;
   margin-top: 8px;
+  min-height: 1em;
 }
-.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+/* Helpers */
+.hide {
+  display: none;
 }

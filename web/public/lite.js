@@ -1,21 +1,21 @@
-/* web/public/lite.js — Kobo/Kindle friendly (ES3-ish) */
 (function () {
-  function qs(id) {
+  // Same-origin API
+  var API = "";
+
+  // ---- DOM helpers ---------------------------------------------------------
+  function $(id) {
     return document.getElementById(id);
   }
-  function setStatus(t) {
-    qs("status").innerHTML = t || "";
+  function setText(id, t) {
+    var el = $(id);
+    if (el) el.textContent = t || "";
   }
 
-  var sessionId = null;
-  var receiverToken = null;
-  var pollTimer = null;
-  var hbTimer = null;
-
+  // ---- XHR (JSON) ----------------------------------------------------------
   function xhr(method, url, body, cb) {
     try {
       var x = new XMLHttpRequest();
-      x.open(method, url, true);
+      x.open(method, API + url, true);
       if (body) x.setRequestHeader("Content-Type", "application/json");
       x.onreadystatechange = function () {
         if (x.readyState === 4) cb(null, x);
@@ -29,6 +29,13 @@
     }
   }
 
+  // ---- State ---------------------------------------------------------------
+  var sessionId = null;
+  var receiverToken = null;
+  var hbTimer = null;
+  var pollTimer = null;
+
+  // ---- Heartbeat -----------------------------------------------------------
   function startHeartbeat() {
     stopHeartbeat();
     hbTimer = setInterval(function () {
@@ -39,7 +46,7 @@
         { sessionId: sessionId, role: "receiver" },
         function () {}
       );
-    }, 30000);
+    }, 15000); // 15s for snappier liveness
   }
   function stopHeartbeat() {
     if (hbTimer) {
@@ -48,6 +55,7 @@
     }
   }
 
+  // ---- Polling -------------------------------------------------------------
   function startPoll() {
     stopPoll();
     pollTimer = setInterval(function () {
@@ -57,30 +65,21 @@
         "/api/session/" + encodeURIComponent(sessionId) + "/status",
         null,
         function (err, x) {
-          if (err || !x) {
-            return;
-          }
+          if (err || !x) return;
           if (x.status !== 200) {
-            setStatus("Session expired.");
-            stopPoll();
+            teardown("ttl");
             return;
           }
-
           var json;
           try {
             json = JSON.parse(x.responseText);
-          } catch (e) {
+          } catch {
             return;
           }
 
           if (json.closed) {
-            setStatus(
-              json.closedBy === "sender"
-                ? "Ended by Sender."
-                : "Session expired."
-            );
-            stopPoll();
-            stopHeartbeat();
+            teardown(json.closedBy || "ttl");
+            location.replace("/"); // receiver always goes home when closed
             return;
           }
 
@@ -90,15 +89,19 @@
               encodeURIComponent(sessionId) +
               "?receiverToken=" +
               encodeURIComponent(receiverToken);
-            qs("downloadBtn").setAttribute("href", href);
-            qs("downloadBtn").style.display = "block";
-            setStatus(
+            var btn = $("downloadBtn");
+            if (btn) {
+              btn.setAttribute("href", href);
+              btn.style.display = "block";
+            }
+            setText(
+              "status",
               "File ready" +
                 (json.file && json.file.name ? ": " + json.file.name : "")
             );
           } else {
-            qs("downloadBtn").style.display = "none";
-            setStatus("Waiting for Sender to upload…");
+            if ($("downloadBtn")) $("downloadBtn").style.display = "none";
+            setText("status", "Waiting for Sender to upload…");
           }
         }
       );
@@ -111,45 +114,96 @@
     }
   }
 
+  // ---- Teardown ------------------------------------------------------------
+  function teardown(_reason) {
+    stopHeartbeat();
+    stopPoll();
+    sessionId = null;
+    receiverToken = null;
+    setText("status", "");
+    // UI stays, redirect is handled by caller when needed
+  }
+
+  // ---- Disconnect beacon on leave/offline ---------------------------------
+  var beaconSent = false;
+  function sendBeaconDisconnect() {
+    try {
+      if (beaconSent) return;
+      if (!sessionId || !navigator.sendBeacon) return;
+      beaconSent = true;
+      var data = JSON.stringify({ sessionId: sessionId, by: "receiver" });
+      navigator.sendBeacon(
+        "/api/disconnect",
+        new Blob([data], { type: "application/json" })
+      );
+    } catch {}
+  }
+
+  // Only fire on real page exits
+  function onPageHide() {
+    sendBeaconDisconnect();
+  }
+  function onBeforeUnload() {
+    sendBeaconDisconnect();
+  }
+  function onOffline() {
+    sendBeaconDisconnect();
+  }
+
+  // IMPORTANT: remove the aggressive visibilitychange handler
+  // Some e-readers flip to "hidden" briefly on load or UI changes.
+  // If you must keep it, use a delay debounce to avoid false positives.
+  // window.addEventListener("visibilitychange", function () {
+  //   if (document.hidden) {
+  //     setTimeout(function() {
+  //       if (document.hidden) sendBeaconDisconnect();
+  //     }, 1500);
+  //   }
+  // });
+
+  window.addEventListener("pagehide", onPageHide, { capture: true });
+  window.addEventListener("beforeunload", onBeforeUnload, { capture: true });
+  window.addEventListener("offline", onOffline);
+
+  // ---- Create session ------------------------------------------------------
   function createSession() {
-    setStatus("Creating session…");
+    setText("status", "Creating session…");
     xhr("POST", "/api/session", { role: "receiver" }, function (err, x) {
       if (err || !x) {
-        setStatus("Network error.");
+        setText("status", "Network error.");
         return;
       }
       if (x.status !== 200) {
-        setStatus("Failed to create session.");
+        setText("status", "Failed to create session.");
         return;
       }
-
       var json;
       try {
         json = JSON.parse(x.responseText);
-      } catch (e) {
-        setStatus("Bad response.");
+      } catch {
+        setText("status", "Bad response.");
         return;
       }
 
       sessionId = json.sessionId;
       receiverToken = json.receiverToken;
 
-      // Show 4-char code and PNG QR (PNG works best on e-readers)
-      qs("code").innerHTML = json.code;
-      qs("qr").src = "/api/qr/" + encodeURIComponent(sessionId) + ".png";
+      setText("code", json.code);
+      // Use PNG endpoint (more reliable on e-readers)
+      var qre = $("qr");
+      if (qre) qre.src = "/api/qr/" + encodeURIComponent(sessionId) + ".png";
+      setText("status", "Waiting for Sender to upload…");
 
-      setStatus("Waiting for Sender to upload…");
       startHeartbeat();
       startPoll();
     });
   }
 
+  // ---- Init ----------------------------------------------------------------
   function ready() {
     createSession();
   }
-  if (document.readyState === "loading") {
+  if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", ready);
-  } else {
-    ready();
-  }
+  else ready();
 })();

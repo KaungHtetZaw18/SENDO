@@ -30,8 +30,9 @@ const SESSION_TTL_SECONDS = Number(process.env.SESSION_TTL_SECONDS || 300);
 const MAX_FILE_MB = Number(process.env.MAX_FILE_MB || 100);
 
 /* ----------------------- Middleware ----------------------- */
+// Single-app deployment: open CORS is fine. If you split sender/receiver origins, restrict this.
 app.use(helmet());
-app.use(cors()); // all origins; safe for single-app. Tighten later if you split origins.
+app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 app.use(morgan("dev"));
 
@@ -72,6 +73,9 @@ app.post("/api/session", async (req, res) => {
   }
 
   const s = createSession({ ttlSeconds: SESSION_TTL_SECONDS });
+  // Track last-seen for optional liveness decisions
+  s.lastSeenReceiver = Date.now();
+  s.lastSeenSender = 0;
   touchSession(s, SESSION_TTL_SECONDS);
 
   const origin = requestOrigin(req);
@@ -103,6 +107,7 @@ app.post("/api/connect", (req, res) => {
     return res.status(410).json({ ok: false, error: "Expired/closed" });
 
   s.senderConnected = true;
+  s.lastSeenSender = Date.now();
   s.status = "connected";
   touchSession(s, SESSION_TTL_SECONDS);
 
@@ -166,15 +171,15 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ ok: false, error: "No file" });
   if (!isAllowedEbook(req.file.originalname)) {
     if (req.file?.path) await safeUnlink(req.file.path);
-    return res
-      .status(415)
-      .json({
-        ok: false,
-        error: "Only .epub .mobi .azw .azw3 .pdf .txt are allowed",
-      });
+    return res.status(415).json({
+      ok: false,
+      error: "Only .epub .mobi .azw .azw3 .pdf .txt are allowed",
+    });
   }
 
+  // Single-file rule: replace previous file
   if (s.file?.path) await safeUnlink(s.file.path);
+
   const meta = {
     name: req.file.originalname,
     size: req.file.size,
@@ -224,6 +229,7 @@ app.get("/api/download/:sessionId", async (req, res) => {
     const stream = fs.createReadStream(s.file.path);
     stream.pipe(res);
 
+    // Delete only after successful transfer (+ grace)
     res.once("finish", async () => {
       try {
         setTimeout(async () => {
@@ -234,9 +240,8 @@ app.get("/api/download/:sessionId", async (req, res) => {
       } catch {}
     });
 
-    res.once("close", () => {
-      // aborted: keep file for retry
-    });
+    // If client aborts, keep file for retry
+    res.once("close", () => {});
 
     touchSession(s, SESSION_TTL_SECONDS);
   } catch (err) {
@@ -253,8 +258,15 @@ app.post("/api/heartbeat", (req, res) => {
   if (s.status === "closed")
     return res.status(410).json({ ok: false, error: "closed" });
 
+  // Record liveness (handy if later you want a tighter idle sweeper)
+  const now = Date.now();
+  if (role === "receiver") s.lastSeenReceiver = now;
+  if (role === "sender") {
+    s.lastSeenSender = now;
+    s.senderConnected = true;
+  }
+
   touchSession(s, SESSION_TTL_SECONDS);
-  if (role === "sender") s.senderConnected = true;
   res.json({ ok: true, expiresAt: s.expiresAt });
 });
 
@@ -268,7 +280,7 @@ app.post("/api/disconnect", async (req, res) => {
       await safeUnlink(s.file.path);
   } catch {}
   clearSessionFile(s);
-  closeSession(s, by);
+  closeSession(s, by); // sets status=closed and closedBy=by
   res.json({ ok: true });
 });
 
@@ -295,12 +307,19 @@ app.get("/api/qr/:id.png", async (req, res) => {
   }
 });
 
+/* ----------------------- Background sweeps ----------------------- */
+// Hard expiry for sessions/files (already deletes stale ones)
+setInterval(() => sweepExpired(), 60 * 1000);
+
+// (Optional) You could add a liveness sweeper here to close the session if
+// receiver or sender stop heartbeating for X seconds. Not required because
+// receiver already sends a 'disconnect' beacon on leave, and TTL handles the rest.
+
 /* ----------------------- Serve frontend (plain files) ----------------------- */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.resolve(__dirname, "../web/public");
 
-// Serve static assets
 app.use(express.static(publicDir));
 
 // Receiver (lite)
@@ -313,7 +332,7 @@ app.get("/sender", (_req, res) => {
   res.sendFile(path.join(publicDir, "sender.html"));
 });
 
-// Landing (receiver)
+// Landing -> receiver (your minimal landing is the receiver page)
 app.get("/", (_req, res) => {
   res.sendFile(path.join(publicDir, "index.html"));
 });
