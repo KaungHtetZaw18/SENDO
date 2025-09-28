@@ -63,7 +63,7 @@
           var json;
           try {
             json = JSON.parse(x.responseText);
-          } catch (e) {
+          } catch (_e) {
             return;
           }
 
@@ -73,19 +73,22 @@
           }
 
           if (json.hasFile && receiverToken) {
-            var href =
+            // Set form action for a same-tab GET download (more reliable on Kobo)
+            var form = qs("downloadForm");
+            form.setAttribute(
+              "action",
               "/api/download/" +
-              encodeURIComponent(sessionId) +
-              "?receiverToken=" +
-              encodeURIComponent(receiverToken);
-            qs("downloadBtn").setAttribute("href", href);
-            qs("downloadBtn").style.display = "block"; // full-width per CSS
+                encodeURIComponent(sessionId) +
+                "?receiverToken=" +
+                encodeURIComponent(receiverToken)
+            );
+            form.style.display = "block";
             setStatus(
               "File ready" +
                 (json.file && json.file.name ? ": " + json.file.name : "")
             );
           } else {
-            qs("downloadBtn").style.display = "none";
+            qs("downloadForm").style.display = "none";
             setStatus("Waiting for Sender to upload…");
           }
         }
@@ -102,7 +105,7 @@
   function teardown(reason) {
     stopPoll();
     stopHeartbeat();
-    qs("startBtn").style.display = "inline-block";
+    qs("startBtn").style.display = "block";
     qs("disconnectBtn").style.display = "none";
     qs("sessionBox").style.display = "none";
     sessionId = null;
@@ -126,7 +129,7 @@
       var json;
       try {
         json = JSON.parse(x.responseText);
-      } catch (e) {
+      } catch (_e) {
         setStatus("Bad response.");
         return;
       }
@@ -137,12 +140,12 @@
       qs("code").innerHTML = json.code;
       qs("linkBox").innerHTML = json.senderLink;
 
-      // Use server PNG endpoint (Kobo-friendly)
+      // Kobo-friendly PNG (avoid data: URLs)
       qs("qr").src = "/api/qr/" + encodeURIComponent(sessionId) + ".png";
 
       qs("sessionBox").style.display = "block";
       qs("startBtn").style.display = "none";
-      qs("disconnectBtn").style.display = "inline-block";
+      qs("disconnectBtn").style.display = "block";
       setStatus("Waiting for Sender to upload…");
 
       startHeartbeat();
