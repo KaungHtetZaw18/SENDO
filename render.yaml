@@ -1,16 +1,20 @@
 services:
   - type: web
     name: sendo
-    rootDir: server # Render will cd into /server before running commands
     env: node
-    buildCommand: npm install
-    startCommand: node index.js
+    plan: starter
+    numInstances: 1
     envVars:
+      - key: PORT
+        value: 10000
       - key: SERVE_WEB
         value: "true"
-      - key: SESSION_TTL_SECONDS
-        value: "300"
       - key: FRONTEND_BASE
-        value: "https://sendo-0k57.onrender.com" # replace with your Render URL after first deploy
-      - key: MAX_FILE_MB
-        value: "100"
+        value: "https://sendo-0k57.onrender.com"
+    buildCommand: |
+      npm --prefix server ci
+      npm --prefix web ci || true
+      npm --prefix web run build || true
+    startCommand: |
+      cd server && node server.js
+    healthCheckPath: /api/health

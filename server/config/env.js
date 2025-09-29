@@ -1,6 +1,6 @@
 import dotenv from "dotenv";
 dotenv.config();
-
+const origin = FRONTEND_BASE || requestOrigin(req);
 export const PORT = Number(process.env.PORT || 3001);
 
 export const SERVE_WEB = process.env.SERVE_WEB === "true";
