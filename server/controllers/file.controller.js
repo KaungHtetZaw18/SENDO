@@ -113,7 +113,7 @@ export async function qrPng(req, res) {
   const s = getSessionById(String(req.params.id));
   if (!s) return res.status(404).end();
 
-  const origin = FRONTEND_BASE || requestOrigin(req);
+  const origin = requestOrigin(req);
   const joinUrl = `${origin}/join?sessionId=${encodeURIComponent(
     s.id
   )}&t=${encodeURIComponent(s.senderToken)}`;
