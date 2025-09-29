@@ -117,9 +117,6 @@ export async function qrPng(req, res) {
   const joinUrl = `${origin}/join?sessionId=${encodeURIComponent(
     s.id
   )}&t=${encodeURIComponent(s.senderToken)}`;
-  const joinUrl = `${origin}/join?sessionId=${encodeURIComponent(
-    s.id
-  )}&t=${encodeURIComponent(s.senderToken)}`;
 
   try {
     const png = await QRCode.toBuffer(joinUrl, {
