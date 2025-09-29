@@ -34,6 +34,8 @@ export function receiverSSR(req, res) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
+<meta name="sendo-session-id" content="${s.id}">
+<meta name="sendo-receiver-token" content="${s.receiverToken}">
 <style>
 :root { --ink:#000; --muted:#444; --border:#888; --paper:#fff; }
 *,*::before,*::after{ box-sizing:border-box; }

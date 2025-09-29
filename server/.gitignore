@@ -1,2 +1,25 @@
-node_modules
+cat > .gitignore <<'EOF'
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Env / secrets
 .env
+.env.*
+!.env.example
+
+# OS / editors
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# App temp
+server/tmp/
+web/dist/
+coverage/
+EOF

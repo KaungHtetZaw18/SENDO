@@ -39,6 +39,11 @@
   var beaconSent = false;
   var paused = false;
 
+  function readMeta(name) {
+    var el = document.querySelector('meta[name="' + name + '"]');
+    return el ? el.getAttribute("content") : "";
+  }
+
   // ---------- heartbeat ----------
   function startHeartbeat() {
     stopHeartbeat();
@@ -87,6 +92,9 @@
             teardown("closed");
             location.replace("/");
             return;
+          }
+          if (json.hasFile && !receiverToken) {
+            receiverToken = readMeta("sendo-receiver-token") || receiverToken;
           }
 
           // File ready -> show download link
@@ -262,6 +270,11 @@
     if (window.__SESS_ID__) {
       sessionId = String(window.__SESS_ID__ || "");
       receiverToken = String(window.__RECV_TOKEN__ || "");
+      // Kobo/Kindle sometimes strip inline scripts; fall back to meta tags:
+      if (!sessionId) sessionId = readMeta("sendo-session-id") || sessionId;
+      if (!receiverToken)
+        receiverToken = readMeta("sendo-receiver-token") || receiverToken;
+
       // refresh QR src once to avoid stale cache on e-ink
       var qre = $("qr");
       if (qre && qre.src) qre.src = qre.src.split("?")[0] + "?v=" + Date.now();
