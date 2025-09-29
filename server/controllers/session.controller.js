@@ -7,6 +7,7 @@ import {
 } from "../store/sessionStore.js";
 import { SESSION_TTL_SECONDS } from "../config/env.js";
 import { setNoCache, requestOrigin } from "../app.js";
+import { FRONTEND_BASE } from "../config/env.js";
 
 export async function createReceiverSession(req, res) {
   const role = req.body?.role || (req.method === "GET" ? "receiver" : null);

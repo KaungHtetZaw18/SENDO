@@ -10,6 +10,7 @@ import {
 import { safeUnlink } from "../store/fileStore.js";
 import { SESSION_TTL_SECONDS } from "../config/env.js";
 import { setNoCache, requestOrigin } from "../app.js";
+import { FRONTEND_BASE } from "../config/env.js";
 
 const ALLOWED_EXTS = new Set([
   ".epub",
@@ -112,7 +113,10 @@ export async function qrPng(req, res) {
   const s = getSessionById(String(req.params.id));
   if (!s) return res.status(404).end();
 
-  const origin = requestOrigin(req);
+  const origin = FRONTEND_BASE || requestOrigin(req);
+  const joinUrl = `${origin}/join?sessionId=${encodeURIComponent(
+    s.id
+  )}&t=${encodeURIComponent(s.senderToken)}`;
   const joinUrl = `${origin}/join?sessionId=${encodeURIComponent(
     s.id
   )}&t=${encodeURIComponent(s.senderToken)}`;
