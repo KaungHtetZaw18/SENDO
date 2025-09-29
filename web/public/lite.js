@@ -177,7 +177,19 @@
   function createSessionCompat() {
     setText("status", "Creating session…");
     setDebug("");
-
+    // Close previous session (if any) before making a new one
+    if (sessionId) {
+      try {
+        navigator.sendBeacon(
+          "/api/disconnect",
+          new Blob([JSON.stringify({ sessionId, by: "receiver" })], {
+            type: "application/json",
+          })
+        );
+      } catch {}
+      sessionId = null;
+      receiverToken = null;
+    }
     // 1) GET first (older engines)
     xhr("GET", "/api/session/new?v=" + Date.now(), null, function (err, x) {
       if (!err && x && x.status === 200) {

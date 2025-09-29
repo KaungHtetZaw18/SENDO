@@ -9,6 +9,7 @@
     pollTimer: null,
     beaconSent: false,
   };
+  var qp = new URLSearchParams(location.search);
 
   // ---- DOM helpers
   function $(id) {
@@ -249,7 +250,27 @@
   function ready() {
     // If opened via deep-link (sender?sessionId=..&t=..), you can optionally auto-connect here.
     // For now we keep the “enter key” UX you requested.
+    var sid = qp.get("sessionId");
+    var tok = qp.get("t");
+    if (sid && tok) {
+      state.sessionId = sid;
+      state.senderToken = tok;
 
+      hide("connectCard");
+      show("uploadCard");
+      setText("connectedTo", "Connected by QR — ready to upload.");
+
+      // Optional: refresh TTL; safe even though /join already connected
+      xhr(
+        "POST",
+        "/api/connect",
+        { sessionId: state.sessionId },
+        function () {}
+      );
+
+      startHeartbeat();
+      startPoll();
+    }
     $("connectBtn").onclick = connect;
     $("uploadBtn").onclick = upload;
     $("disconnectBtn").onclick = manualDisconnect;

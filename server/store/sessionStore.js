@@ -33,7 +33,7 @@ export function createSession({ ttlSeconds = 300 } = {}) {
 
     createdAt: now,
     lastActivityAt: now,
-    expiresAt: now + ttlSeconds * 1000,
+    expiresAt: ttlSeconds > 0 ? now + ttlSeconds * 1000 : null,
 
     // liveness (used by sweeper)
     lastSeenReceiver: 0,
@@ -58,7 +58,7 @@ export function getSessionByCode(code) {
 export function touchSession(session, ttlSeconds) {
   const now = Date.now();
   session.lastActivityAt = now;
-  if (ttlSeconds) session.expiresAt = now + ttlSeconds * 1000;
+  if (ttlSeconds > 0) session.expiresAt = now + ttlSeconds * 1000;
 }
 
 // Mark closed (kept as tombstone for a bit)
@@ -77,7 +77,11 @@ export function purgeSession(session) {
 export function sweepExpired() {
   const now = Date.now();
   for (const s of sessionsById.values()) {
-    if (s.status !== "closed" && s.expiresAt <= now) {
+    if (
+      s.status !== "closed" &&
+      Number.isFinite(s.expiresAt) &&
+      s.expiresAt <= now
+    ) {
       closeSession(s, "ttl");
     }
     if (
