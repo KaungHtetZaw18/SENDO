@@ -24,7 +24,7 @@ const upload = multer({
 });
 
 const r = Router();
-r.post("/api/upload", upload.single("file"), asyncHandler(uploadFile));
-r.get("/api/download/:sessionId", asyncHandler(downloadFile));
-r.get("/api/qr/:id.png", asyncHandler(qrPng));
+r.post("/upload", upload.single("file"), asyncHandler(uploadFile));
+r.get("/download/:sessionId", asyncHandler(downloadFile));
+r.get("/qr/:id.png", asyncHandler(qrPng));
 export default r;

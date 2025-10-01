@@ -18,7 +18,13 @@ r.get("/session/new", asyncHandler(createReceiverSession));
 
 // connect
 r.post("/connect", asyncHandler(connectSender));
-r.get("/join", asyncHandler(joinViaQR));
+r.get(
+  "/join",
+  asyncHandler((req, res) => {
+    console.log("HIT /api/join", req.query); // TEMP debug
+    return joinViaQR(req, res);
+  })
+);
 
 // status & lifecycle
 r.get("/session/:id/status", asyncHandler(getStatus));

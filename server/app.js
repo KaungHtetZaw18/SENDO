@@ -55,7 +55,15 @@ app.use("/qr", (req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   next();
 });
-app.use("/api", cors({ origin: "*" }), apiRoutes);
+app.use(
+  "/api",
+  (req, _res, next) => {
+    console.log("API hit:", req.method, req.path);
+    next();
+  },
+  cors({ origin: "*" }),
+  apiRoutes
+);
 
 // --- 404 & error handling ---
 app.use(notFound);

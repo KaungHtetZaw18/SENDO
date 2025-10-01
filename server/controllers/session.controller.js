@@ -7,8 +7,8 @@ import {
   closeSession,
 } from "../store/sessionStore.js";
 
-import { SESSION_TTL_SECONDS, FRONTEND_BASE } from "../config/env.js";
 import { setNoCache } from "../app.js";
+import { SESSION_TTL_SECONDS, FRONTEND_BASE } from "../config/env.js";
 
 // --- Receiver starts a session ---
 export async function createReceiverSession(req, res) {
@@ -72,14 +72,18 @@ export async function connectSender(req, res) {
 export function joinViaQR(req, res) {
   const sid = String(req.query.sessionId || "");
   const tok = String(req.query.t || "");
-  const s = getSessionById(sid);
-  if (!s || s.closed) return res.status(404).send("Session not found");
 
-  res.redirect(
-    `${FRONTEND_BASE}/sender?sessionId=${encodeURIComponent(
-      s.id
-    )}&t=${encodeURIComponent(tok)}`
-  );
+  const s = getSessionById(sid);
+  if (!s) return res.status(404).send("Session not found");
+  if (tok !== s.senderToken) return res.status(401).send("Unauthorized");
+
+  const base = (FRONTEND_BASE || "").replace(/\/+$/, "");
+  const url = `${base}/sender?sessionId=${encodeURIComponent(
+    s.id
+  )}&t=${encodeURIComponent(tok)}`;
+
+  // 302 so the scanner/browser navigates to your Sender page
+  return res.redirect(302, url);
 }
 
 // --- Get session status ---

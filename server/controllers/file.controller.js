@@ -11,6 +11,7 @@ import {
 import { safeUnlink } from "../store/fileStore.js";
 import { FORCE_QR_ORIGIN } from "../config/env.js";
 import { requestOrigin, setNoCache } from "../app.js"; // add requestOrigin import
+import { SESSION_TTL_SECONDS } from "../config/env.js";
 const ALLOWED_EXTS = new Set([
   ".epub",
   ".mobi",
@@ -112,13 +113,19 @@ export async function qrPng(req, res) {
   const s = getSessionById(String(req.params.id));
   if (!s) return res.status(404).end();
 
-  const origin = FORCE_QR_ORIGIN || requestOrigin(req); // e.g. http://172.20.10.2:3001
-  const joinUrl = `${origin}/join?sessionId=${encodeURIComponent(
-    s.id
-  )}&t=${encodeURIComponent(s.senderToken)}`;
+  // Pick base: env override or the request's own origin
+  const baseStr =
+    FORCE_QR_ORIGIN || requestOrigin(req) || "http://localhost:3001";
 
-  // optional: log to confirm
-  console.log("[QR joinUrl]", joinUrl);
+  // Build URL safely (avoids accidental //)
+  const u = new URL(baseStr);
+  u.pathname = "/api/join";
+  u.search = `sessionId=${encodeURIComponent(s.id)}&t=${encodeURIComponent(
+    s.senderToken
+  )}`;
+
+  const joinUrl = u.toString();
+  console.log("[QR joinUrl]", joinUrl); // <-- watch this in your server logs
 
   const png = await QRCode.toBuffer(joinUrl, {
     type: "png",
