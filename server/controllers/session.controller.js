@@ -5,9 +5,11 @@ import {
   touchSession,
   closeSession,
 } from "../store/sessionStore.js";
-import { SESSION_TTL_SECONDS } from "../config/env.js";
+
+import { SESSION_TTL_SECONDS, FRONTEND_BASE } from "../config/env.js";
 import { setNoCache } from "../app.js";
-import { FRONTEND_BASE } from "../config/env.js";
+
+// --- Receiver starts a session ---
 export async function createReceiverSession(req, res) {
   const role = req.body?.role || (req.method === "GET" ? "receiver" : null);
   if (role !== "receiver") {
@@ -20,6 +22,7 @@ export async function createReceiverSession(req, res) {
   s.lastSeenReceiver = Date.now();
   s.lastSeenSender = 0;
   touchSession(s, SESSION_TTL_SECONDS);
+
   const joinUrl = `${FRONTEND_BASE}/join?sessionId=${encodeURIComponent(
     s.id
   )}&t=${encodeURIComponent(s.senderToken)}`;
@@ -35,12 +38,14 @@ export async function createReceiverSession(req, res) {
   });
 }
 
+// --- Sender connects ---
 export async function connectSender(req, res) {
   const { code, sessionId } = req.body || {};
   let s = code ? getSessionByCode(String(code).toUpperCase().trim()) : null;
   if (!s && sessionId) s = getSessionById(String(sessionId));
   if (!s)
     return res.status(404).json({ ok: false, error: "Session not found" });
+
   if (
     s.status === "closed" ||
     (Number.isFinite(s.expiresAt) && s.expiresAt <= Date.now())
@@ -62,7 +67,7 @@ export async function connectSender(req, res) {
   });
 }
 
-// server/controllers/session.controller.js
+// --- Join via QR ---
 export function joinViaQR(req, res) {
   const sid = String(req.query.sessionId || "");
   const tok = String(req.query.t || "");
@@ -75,6 +80,8 @@ export function joinViaQR(req, res) {
     )}&t=${encodeURIComponent(tok)}`
   );
 }
+
+// --- Get session status ---
 export async function getStatus(req, res) {
   const s = getSessionById(String(req.params.id));
   if (!s) return res.status(404).json({ ok: false, error: "Not found" });
@@ -102,6 +109,7 @@ export async function getStatus(req, res) {
   });
 }
 
+// --- Heartbeat ---
 export async function heartbeat(req, res) {
   const { sessionId, role } = req.body || {};
   const s = getSessionById(String(sessionId));
@@ -121,14 +129,15 @@ export async function heartbeat(req, res) {
   res.json({ ok: true, expiresAt: s.expiresAt });
 }
 
+// --- Disconnect ---
 export async function disconnect(req, res) {
   const { sessionId, by = "sender" } = req.body || {};
   const s = getSessionById(String(sessionId));
   if (!s) return res.status(404).json({ ok: false, error: "not_found" });
 
-  // File cleanup is done in file.controller to avoid fs here; but keep behavior:
-  s.file = undefined; // session cleanup if needed by caller
+  s.file = undefined;
   closeSession(s, by);
+
   setNoCache(res);
   res.json({ ok: true });
 }

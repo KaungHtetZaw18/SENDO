@@ -1,4 +1,3 @@
-// server/app.js
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -6,19 +5,16 @@ import morgan from "morgan";
 import path from "path";
 import { fileURLToPath } from "url";
 
-import apiRoutes from "./routes/index.js"; // your API routes
-import pageRoutes from "./routes/page.routes.js"; // frontend pages
+import apiRoutes from "./routes/index.js";
+import pageRoutes from "./routes/page.routes.js";
 
 import { notFound, errorHandler } from "./middlewares/error.js";
 import { sweepExpired } from "./store/sessionStore.js";
-import { PORT, SERVE_WEB } from "./config/env.js";
+import { SERVE_WEB } from "./config/env.js";
 
-// --- small helpers ---
+// --- helpers ---
 export function setNoCache(res) {
-  res.setHeader(
-    "Cache-Control",
-    "no-store, no-cache, must-revalidate, proxy-revalidate"
-  );
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
 }
@@ -30,44 +26,44 @@ export function requestOrigin(req) {
   return host ? `${proto}://${host}` : "";
 }
 
-// --- app + middleware ---
+// --- app setup ---
 const app = express();
 app.use(
   helmet({
-    // allow images/assets to be embedded by a different origin (5173 -> 3001)
     crossOriginResourcePolicy: { policy: "cross-origin" },
-    // disable COEP during dev with split origins
     crossOriginEmbedderPolicy: false,
   })
 );
-app.use(cors({ origin: "https://sendo-snowy.vercel.app" }));
+app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: false }));
 app.use(morgan("dev"));
 
-// --- static (only if SERVE_WEB=true) ---
+// static only if SERVE_WEB=true
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.resolve(__dirname, "../web/public");
 
 if (SERVE_WEB) {
   app.use(express.static(publicDir, { setHeaders: setNoCache }));
-  app.use(pageRoutes); // serve landing, sender, receiver
+  app.use(pageRoutes);
 }
 
+// QR assets
 app.use("/qr", (req, res, next) => {
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   res.setHeader("Access-Control-Allow-Origin", "*");
   next();
 });
-// --- API routes (always) ---
-app.use(apiRoutes);
 
-// --- 404 + centralized error JSON ---
+// --- API routes (always under /api) ---
+app.use("/api", apiRoutes);
+
+// --- 404 & error handling ---
 app.use(notFound);
 app.use(errorHandler);
 
-// --- background sweeps (TTL + liveness) ---
+// --- background sweeps ---
 setInterval(() => {
   try {
     sweepExpired();
