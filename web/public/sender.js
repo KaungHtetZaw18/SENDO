@@ -1,304 +1,289 @@
-(function () {
-  // Same-origin API
-  var API = "";
+// /sender.js (ES6)
+(() => {
+  // ----- helpers -----
+  const readMeta = (name) => {
+    const m = [...document.getElementsByTagName("meta")].find(
+      (el) => el.getAttribute("name") === name
+    );
+    return m?.getAttribute("content") || "";
+  };
 
-  var state = {
+  let API = (readMeta("sendo-api-base") || "").replace(/\/+$/, "");
+  if (!API) API = ""; // same-origin fallback
+
+  const $ = (id) => document.getElementById(id);
+  const setText = (id, t) => {
+    const el = $(id);
+    if (el) el.textContent = t || "";
+  };
+  const show = (id) => $(id)?.classList.remove("hide");
+  const hide = (id) => $(id)?.classList.add("hide");
+
+  const xhr = (method, url, body) =>
+    new Promise((resolve) => {
+      try {
+        const x = new XMLHttpRequest();
+        x.open(method, API + url, true);
+        if (body) x.setRequestHeader("Content-Type", "application/json");
+        x.onreadystatechange = () => {
+          if (x.readyState === 4) resolve(x);
+        };
+        x.onerror = () => resolve(null);
+        x.send(body ? JSON.stringify(body) : null);
+      } catch {
+        resolve(null);
+      }
+    });
+
+  // ----- state -----
+  const state = {
     sessionId: null,
     senderToken: null,
     hbTimer: null,
     pollTimer: null,
     beaconSent: false,
   };
-  var qp = new URLSearchParams(location.search);
 
-  // ---- DOM helpers
-  function $(id) {
-    return document.getElementById(id);
-  }
-  function setText(id, t) {
-    var el = $(id);
-    if (el) el.textContent = t || "";
-  }
-  function show(id) {
-    var el = $(id);
-    if (el) el.classList.remove("hide");
-  }
-  function hide(id) {
-    var el = $(id);
-    if (el) el.classList.add("hide");
-  }
-
-  // ---- XHR helper
-  function xhr(method, url, body, cb) {
+  // ----- parse params -----
+  const parseParams = () => {
+    let sid = null,
+      tok = null;
     try {
-      var x = new XMLHttpRequest();
-      x.open(method, API + url, true);
-      if (body) x.setRequestHeader("Content-Type", "application/json");
-      x.onreadystatechange = function () {
-        if (x.readyState === 4) cb(null, x);
-      };
-      x.onerror = function () {
-        cb(new Error("net"), null);
-      };
-      x.send(body ? JSON.stringify(body) : null);
-    } catch (e) {
-      cb(e, null);
+      const qp = new URLSearchParams(window.location.search);
+      sid = qp.get("sessionId");
+      tok = qp.get("t");
+    } catch {}
+    if (!sid || !tok) {
+      const s = window.location.search || "";
+      const m1 = /[?&]sessionId=([^&]+)/.exec(s);
+      const m2 = /[?&]t=([^&]+)/.exec(s);
+      if (m1) sid = decodeURIComponent(m1[1] || "");
+      if (m2) tok = decodeURIComponent(m2[1] || "");
     }
-  }
+    return { sid, tok };
+  };
 
-  // ---- Heartbeat & status poll
-  function startHeartbeat() {
+  // ----- heartbeat / poll -----
+  const startHeartbeat = () => {
     stopHeartbeat();
-    state.hbTimer = setInterval(function () {
+    state.hbTimer = setInterval(() => {
       if (!state.sessionId) return;
-      xhr(
-        "POST",
-        "/api/heartbeat",
-        { sessionId: state.sessionId, role: "sender" },
-        function () {}
-      );
+      xhr("POST", "/api/heartbeat", {
+        sessionId: state.sessionId,
+        role: "sender",
+      });
     }, 30000);
-  }
-  function stopHeartbeat() {
+  };
+  const stopHeartbeat = () => {
     if (state.hbTimer) clearInterval(state.hbTimer);
     state.hbTimer = null;
-  }
+  };
 
-  function startPoll() {
+  const startPoll = () => {
     stopPoll();
-    state.pollTimer = setInterval(function () {
+    state.pollTimer = setInterval(async () => {
       if (!state.sessionId) return;
-      xhr(
+      const r = await xhr(
         "GET",
-        "/api/session/" + encodeURIComponent(state.sessionId) + "/status",
-        null,
-        function (err, x) {
-          if (err || !x) return;
-          if (x.status !== 200) return;
-          var json;
-          try {
-            json = JSON.parse(x.responseText);
-          } catch {
-            return;
-          }
-
-          // If receiver closed/expired, bounce sender to landing
-          if (json.closed) {
-            teardownToLanding();
-          }
-        }
+        `/api/session/${encodeURIComponent(state.sessionId)}/status`
       );
+      if (!r || r.status !== 200) return;
+      let json;
+      try {
+        json = JSON.parse(r.responseText);
+      } catch {
+        return;
+      }
+      if (json?.closed) teardownToLanding();
     }, 1500);
-  }
-  function stopPoll() {
+  };
+  const stopPoll = () => {
     if (state.pollTimer) clearInterval(state.pollTimer);
     state.pollTimer = null;
-  }
+  };
 
-  // ---- Disconnect (manual + beacon)
-  function sendBeaconDisconnect() {
+  // ----- disconnect -----
+  const sendBeaconDisconnect = () => {
     try {
-      if (state.beaconSent) return;
-      if (!state.sessionId || !navigator.sendBeacon) return;
+      if (state.beaconSent || !state.sessionId || !navigator.sendBeacon) return;
       state.beaconSent = true;
-      var data = JSON.stringify({ sessionId: state.sessionId, by: "sender" });
+      const data = JSON.stringify({ sessionId: state.sessionId, by: "sender" });
       navigator.sendBeacon(
-        "/api/disconnect",
+        (API || "") + "/api/disconnect",
         new Blob([data], { type: "application/json" })
       );
     } catch {}
-  }
-
-  function manualDisconnect() {
+  };
+  const manualDisconnect = async () => {
     if (!state.sessionId) return teardownToLanding();
-    xhr(
-      "POST",
-      "/api/disconnect",
-      { sessionId: state.sessionId, by: "sender" },
-      function () {
-        teardownToLanding();
-      }
-    );
-  }
-
-  function teardownToLanding() {
+    await xhr("POST", "/api/disconnect", {
+      sessionId: state.sessionId,
+      by: "sender",
+    });
+    teardownToLanding();
+  };
+  const teardownToLanding = () => {
     stopHeartbeat();
     stopPoll();
     state.sessionId = null;
     state.senderToken = null;
-    // Small delay to allow beacon to flush if we came from beforeunload
-    setTimeout(function () {
-      window.location.replace("/");
-    }, 50);
-  }
+    setTimeout(() => window.location.replace("/"), 50);
+  };
 
-  // ---- UI logic
-  function connect() {
-    var raw = $("codeInput").value || "";
-    var code = raw.trim().toUpperCase();
-    if (code.length !== 4) {
-      setText("connectStatus", "Please enter a 4-character key.");
-      return;
-    }
+  // ----- UI actions -----
+  const connect = async () => {
+    const code = ($("codeInput")?.value || "").trim().toUpperCase();
+    if (code.length !== 4)
+      return setText("connectStatus", "Please enter a 4-character key.");
     $("connectBtn").disabled = true;
     setText("connectStatus", "Connecting…");
 
-    xhr("POST", "/api/connect", { code: code }, function (err, x) {
-      $("connectBtn").disabled = false;
-      if (err || !x) return setText("connectStatus", "Network error.");
-      if (x.status !== 200)
-        return setText("connectStatus", "Could not connect. Check the key.");
+    const r = await xhr("POST", "/api/connect", { code });
+    $("connectBtn").disabled = false;
 
-      var json;
-      try {
-        json = JSON.parse(x.responseText);
-      } catch {
-        return setText("connectStatus", "Bad response.");
-      }
-      if (!json.ok) return setText("connectStatus", json.error || "Failed.");
+    if (!r) return setText("connectStatus", "Network error.");
+    if (r.status !== 200)
+      return setText("connectStatus", "Could not connect. Check the key.");
 
-      state.sessionId = json.sessionId;
-      state.senderToken = json.senderToken;
-
-      setText("connectedTo", "Connected to key: " + code);
-      hide("connectCard");
-      show("uploadCard");
-      setText("connectStatus", "");
-
-      // Reset controls
-      $("fileInput").value = "";
-      $("uploadBtn").disabled = true; // require a file to enable
-      setText("uploadStatus", "");
-
-      startHeartbeat();
-      startPoll();
-    });
-  }
-
-  function upload() {
-    if (!state.sessionId || !state.senderToken) {
-      setText("uploadStatus", "Not connected.");
-      return;
+    let json;
+    try {
+      json = JSON.parse(r.responseText);
+    } catch {
+      return setText("connectStatus", "Bad response.");
     }
-    var f = $("fileInput").files[0];
-    if (!f) {
-      setText(
+    if (!json.ok) return setText("connectStatus", json.error || "Failed.");
+
+    state.sessionId = json.sessionId;
+    state.senderToken = json.senderToken;
+
+    setText("connectedTo", `Connected to key: ${code}`);
+    hide("connectCard");
+    show("uploadCard");
+    setText("connectStatus", "");
+    $("fileInput").value = "";
+    $("uploadBtn").disabled = true;
+
+    startHeartbeat();
+    startPoll();
+  };
+
+  const onFileChange = () => {
+    $("uploadBtn").disabled = !$("fileInput")?.files[0];
+  };
+
+  const upload = () => {
+    if (!state.sessionId || !state.senderToken)
+      return setText("uploadStatus", "Not connected.");
+
+    const f = $("fileInput")?.files[0];
+    if (!f)
+      return setText(
         "uploadStatus",
         "Choose a file first (.epub .mobi .azw .azw3 .pdf .txt)."
       );
-      return;
-    }
 
     setText("uploadStatus", "Uploading…");
-    $("uploadBtn").disabled = true; // prevent double-click during upload
+    $("uploadBtn").disabled = true;
 
-    var fd = new FormData();
+    const fd = new FormData();
     fd.append("file", f);
 
-    var url =
-      "/api/upload?sessionId=" +
-      encodeURIComponent(state.sessionId) +
-      "&senderToken=" +
-      encodeURIComponent(state.senderToken);
+    const url = `/api/upload?sessionId=${encodeURIComponent(
+      state.sessionId
+    )}&senderToken=${encodeURIComponent(state.senderToken)}`;
 
-    var req = new XMLHttpRequest();
-    req.open("POST", API + url, true);
-    req.onreadystatechange = function () {
+    const req = new XMLHttpRequest();
+    req.open("POST", (API || "") + url, true);
+    req.onreadystatechange = () => {
       if (req.readyState !== 4) return;
 
       if (req.status !== 200) {
         setText("uploadStatus", "Upload failed.");
-        // Re-enable if a file is still selected
-        $("uploadBtn").disabled = !$("fileInput").files[0];
+        $("uploadBtn").disabled = !$("fileInput")?.files[0];
         return;
       }
-      var json;
+      let json;
       try {
         json = JSON.parse(req.responseText);
       } catch {
         setText("uploadStatus", "Bad response.");
-        $("uploadBtn").disabled = !$("fileInput").files[0];
+        $("uploadBtn").disabled = !$("fileInput")?.files[0];
         return;
       }
       if (!json.ok) {
         setText("uploadStatus", json.error || "Upload failed.");
-        $("uploadBtn").disabled = !$("fileInput").files[0];
+        $("uploadBtn").disabled = !$("fileInput")?.files[0];
         return;
       }
-
-      // Success — keep the controls visible and usable for another upload.
-      var name = json.file && json.file.name ? json.file.name : "file";
-      setText("uploadStatus", "Uploaded: " + name);
-
-      // Optionally clear the file so the user can pick a different one
+      const name = json.file?.name || "file";
+      setText("uploadStatus", `Uploaded: ${name}`);
       $("fileInput").value = "";
-      $("uploadBtn").disabled = true; // disabled until a new file is selected
+      $("uploadBtn").disabled = true;
     };
-    req.onerror = function () {
+    req.onerror = () => {
       setText("uploadStatus", "Network error.");
-      $("uploadBtn").disabled = !$("fileInput").files[0];
+      $("uploadBtn").disabled = !$("fileInput")?.files[0];
     };
     req.send(fd);
-  }
+  };
 
-  function onFileChange() {
-    // Enable Upload only when a file is selected
-    $("uploadBtn").disabled = !$("fileInput").files[0];
-  }
+  // ----- auto-join & boot -----
+  const flipToUpload = () => {
+    hide("connectCard");
+    show("uploadCard");
+    setText("connectedTo", "Connected by QR — ready to upload.");
+    $("fileInput").value = "";
+    $("uploadBtn").disabled = true;
+  };
 
-  // ---- Auto-wire
-  function ready() {
-    // If opened via deep-link (sender?sessionId=..&t=..), you can optionally auto-connect here.
-    // For now we keep the “enter key” UX you requested.
-    var sid = qp.get("sessionId");
-    var tok = qp.get("t");
-    if (sid && tok) {
-      state.sessionId = sid;
-      state.senderToken = tok;
+  const autoJoinIfParams = async () => {
+    const { sid, tok } = parseParams();
+    if (!sid || !tok) return false;
 
-      hide("connectCard");
-      show("uploadCard");
-      setText("connectedTo", "Connected by QR — ready to upload.");
+    state.sessionId = sid;
+    state.senderToken = tok;
 
-      // Optional: refresh TTL; safe even though /join already connected
-      xhr(
-        "POST",
-        "/api/connect",
-        { sessionId: state.sessionId },
-        function () {}
-      );
+    // Flip immediately; retry until DOM is ready
+    let tries = 0;
+    const tryFlip = () => {
+      tries++;
+      if ($("uploadCard") && $("connectCard")) {
+        flipToUpload();
+      } else if (tries < 10) {
+        return setTimeout(tryFlip, 30);
+      }
+    };
+    tryFlip();
 
-      startHeartbeat();
-      startPoll();
-    }
+    xhr("POST", "/api/connect", { sessionId: state.sessionId });
+    startHeartbeat();
+    startPoll();
+    return true;
+  };
+
+  const wireHandlers = () => {
     $("connectBtn").onclick = connect;
     $("uploadBtn").onclick = upload;
     $("disconnectBtn").onclick = manualDisconnect;
     $("fileInput").addEventListener("change", onFileChange);
 
-    // Auto-disconnect if sender window/tab is closed or goes offline.
-    window.addEventListener(
-      "pagehide",
-      function () {
-        sendBeaconDisconnect();
-      },
-      { capture: true }
-    );
-    window.addEventListener(
-      "beforeunload",
-      function () {
-        sendBeaconDisconnect();
-      },
-      { capture: true }
-    );
-    window.addEventListener("offline", function () {
-      sendBeaconDisconnect();
+    window.addEventListener("pagehide", () => sendBeaconDisconnect(), {
+      capture: true,
     });
-  }
+    window.addEventListener("beforeunload", () => sendBeaconDisconnect(), {
+      capture: true,
+    });
+    window.addEventListener("offline", () => sendBeaconDisconnect());
+  };
+
+  const boot = async () => {
+    wireHandlers();
+    await autoJoinIfParams();
+  };
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", ready);
+    document.addEventListener("DOMContentLoaded", boot);
   } else {
-    ready();
+    boot();
   }
 })();

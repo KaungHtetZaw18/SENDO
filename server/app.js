@@ -5,17 +5,13 @@ import helmet from "helmet";
 import morgan from "morgan";
 import path from "path";
 import { fileURLToPath } from "url";
-import fs from "fs";
 
-import routes from "./routes/index.js";
+import apiRoutes from "./routes/index.js"; // your API routes
+import pageRoutes from "./routes/page.routes.js"; // frontend pages
+
 import { notFound, errorHandler } from "./middlewares/error.js";
-import {
-  allSessions,
-  sweepExpired,
-  clearSessionFile,
-  closeSession,
-} from "./store/sessionStore.js";
-import { PORT, SENDER_GONE_MS, RECEIVER_GONE_MS } from "./config/env.js";
+import { sweepExpired } from "./store/sessionStore.js";
+import { PORT, SERVE_WEB } from "./config/env.js";
 
 // --- small helpers ---
 export function setNoCache(res) {
@@ -36,20 +32,36 @@ export function requestOrigin(req) {
 
 // --- app + middleware ---
 const app = express();
-app.use(helmet());
+app.use(
+  helmet({
+    // allow images/assets to be embedded by a different origin (5173 -> 3001)
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    // disable COEP during dev with split origins
+    crossOriginEmbedderPolicy: false,
+  })
+);
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: false }));
 app.use(morgan("dev"));
 
-// --- static (no cache) ---
+// --- static (only if SERVE_WEB=true) ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const publicDir = path.resolve(__dirname, "../web/public"); // app.js is in server/, so ../web/public
-app.use(express.static(publicDir, { setHeaders: setNoCache }));
+const publicDir = path.resolve(__dirname, "../web/public");
 
-// --- routes ---
-app.use(routes);
+if (SERVE_WEB) {
+  app.use(express.static(publicDir, { setHeaders: setNoCache }));
+  app.use(pageRoutes); // serve landing, sender, receiver
+}
+
+app.use("/qr", (req, res, next) => {
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  next();
+});
+// --- API routes (always) ---
+app.use(apiRoutes);
 
 // --- 404 + centralized error JSON ---
 app.use(notFound);
@@ -58,7 +70,6 @@ app.use(errorHandler);
 // --- background sweeps (TTL + liveness) ---
 setInterval(() => {
   try {
-    // keep this: will be a no-op when SESSION_TTL_SECONDS=0
     sweepExpired();
   } catch {}
 }, 5000);

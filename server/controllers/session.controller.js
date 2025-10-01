@@ -6,8 +6,8 @@ import {
   closeSession,
 } from "../store/sessionStore.js";
 import { SESSION_TTL_SECONDS } from "../config/env.js";
-import { setNoCache, requestOrigin } from "../app.js";
-
+import { setNoCache } from "../app.js";
+import { FRONTEND_BASE } from "../config/env.js";
 export async function createReceiverSession(req, res) {
   const role = req.body?.role || (req.method === "GET" ? "receiver" : null);
   if (role !== "receiver") {
@@ -20,9 +20,7 @@ export async function createReceiverSession(req, res) {
   s.lastSeenReceiver = Date.now();
   s.lastSeenSender = 0;
   touchSession(s, SESSION_TTL_SECONDS);
-
-  const origin = requestOrigin(req);
-  const joinUrl = `${origin}/join?sessionId=${encodeURIComponent(
+  const joinUrl = `${FRONTEND_BASE}/join?sessionId=${encodeURIComponent(
     s.id
   )}&t=${encodeURIComponent(s.senderToken)}`;
 
@@ -64,40 +62,19 @@ export async function connectSender(req, res) {
   });
 }
 
-export async function joinViaQR(req, res) {
+// server/controllers/session.controller.js
+export function joinViaQR(req, res) {
   const sid = String(req.query.sessionId || "");
   const tok = String(req.query.t || "");
   const s = getSessionById(sid);
+  if (!s || s.closed) return res.status(404).send("Session not found");
 
-  if (!s) {
-    setNoCache(res);
-    return res.redirect("/?e=not_found");
-  }
-  if (s.senderToken !== tok) {
-    setNoCache(res);
-    return res.redirect("/?e=bad_token");
-  }
-  if (
-    s.status === "closed" ||
-    (Number.isFinite(s.expiresAt) && s.expiresAt <= Date.now())
-  ) {
-    setNoCache(res);
-    return res.redirect("/?e=expired");
-  }
-
-  s.senderConnected = true;
-  s.lastSeenSender = Date.now();
-  s.status = "connected";
-  touchSession(s, SESSION_TTL_SECONDS);
-
-  setNoCache(res);
   res.redirect(
-    `/sender?sessionId=${encodeURIComponent(s.id)}&t=${encodeURIComponent(
-      s.senderToken
-    )}`
+    `${FRONTEND_BASE}/sender?sessionId=${encodeURIComponent(
+      s.id
+    )}&t=${encodeURIComponent(tok)}`
   );
 }
-
 export async function getStatus(req, res) {
   const s = getSessionById(String(req.params.id));
   if (!s) return res.status(404).json({ ok: false, error: "Not found" });

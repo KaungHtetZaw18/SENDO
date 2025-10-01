@@ -8,10 +8,8 @@ import {
   touchSession,
 } from "../store/sessionStore.js";
 import { safeUnlink } from "../store/fileStore.js";
-import { SESSION_TTL_SECONDS } from "../config/env.js";
-import { setNoCache, requestOrigin } from "../app.js";
-import { FRONTEND_BASE } from "../config/env.js";
-
+import { FORCE_QR_ORIGIN } from "../config/env.js";
+import { requestOrigin, setNoCache } from "../app.js"; // add requestOrigin import
 const ALLOWED_EXTS = new Set([
   ".epub",
   ".mobi",
@@ -113,22 +111,19 @@ export async function qrPng(req, res) {
   const s = getSessionById(String(req.params.id));
   if (!s) return res.status(404).end();
 
-  const origin = requestOrigin(req);
+  const origin = FORCE_QR_ORIGIN || requestOrigin(req); // e.g. http://172.20.10.2:3001
   const joinUrl = `${origin}/join?sessionId=${encodeURIComponent(
     s.id
   )}&t=${encodeURIComponent(s.senderToken)}`;
 
-  try {
-    const png = await QRCode.toBuffer(joinUrl, {
-      type: "png",
-      scale: 6,
-      margin: 1,
-    });
-    setNoCache(res);
-    res.setHeader("Content-Type", "image/png");
-    res.setHeader("Content-Length", String(png.length));
-    res.end(png);
-  } catch {
-    res.status(500).end();
-  }
+  // optional: log to confirm
+  console.log("[QR joinUrl]", joinUrl);
+
+  const png = await QRCode.toBuffer(joinUrl, {
+    type: "png",
+    scale: 6,
+    margin: 1,
+  });
+  setNoCache(res);
+  res.type("png").send(png);
 }

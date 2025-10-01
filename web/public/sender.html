@@ -4,14 +4,15 @@
     <meta charset="utf-8" />
     <title>Sendo — Sender</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="sendo-api-base" content="http://172.20.10.2:3001" />
+
     <style>
       :root {
         --ink: #111;
         --muted: #555;
         --border: #ccc;
         --paper: #fff;
-        --bg: #f9f9f9; /* soft white background */
-        --accent: #111;
+        --bg: #f9f9f9;
       }
       * {
         box-sizing: border-box;
@@ -90,12 +91,6 @@
       .hide {
         display: none;
       }
-      .info {
-        font-size: 13px;
-        line-height: 1.5;
-        color: var(--ink);
-        margin-top: 18px;
-      }
       .footer {
         margin-top: 24px;
         color: #444;
@@ -129,7 +124,6 @@
       <!-- Step 2: Upload -->
       <div id="uploadCard" class="card hide">
         <div class="muted" id="connectedTo"></div>
-
         <div class="row">
           <input
             id="fileInput"
@@ -139,7 +133,7 @@
           />
         </div>
         <div class="row">
-          <button id="uploadBtn" class="btn">Upload</button>
+          <button id="uploadBtn" class="btn" disabled>Upload</button>
         </div>
         <div class="row">
           <button id="disconnectBtn" class="btn">Disconnect</button>
@@ -147,7 +141,6 @@
         <div id="uploadStatus" class="muted"></div>
       </div>
 
-      <!-- Info (always visible) -->
       <div class="card">
         <h3 style="margin-top: 0">How Sendo works</h3>
         <ul
@@ -176,6 +169,6 @@
       <div class="footer">Created by <strong>Kaung</strong> • © 2025 Sendo</div>
     </div>
 
-    <script src="/sender.js" defer></script>
+    <script src="/sender.js?v=2" defer></script>
   </body>
 </html>
