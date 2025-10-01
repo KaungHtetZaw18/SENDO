@@ -1,3 +1,4 @@
+// server/app.js
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -34,7 +35,6 @@ app.use(
     crossOriginEmbedderPolicy: false,
   })
 );
-app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: false }));
 app.use(morgan("dev"));
@@ -55,9 +55,7 @@ app.use("/qr", (req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   next();
 });
-
-// --- API routes (always under /api) ---
-app.use("/api", apiRoutes);
+app.use("/api", cors({ origin: "*" }), apiRoutes);
 
 // --- 404 & error handling ---
 app.use(notFound);

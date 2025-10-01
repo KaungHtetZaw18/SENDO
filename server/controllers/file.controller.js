@@ -1,3 +1,4 @@
+// server/controllers/file.controller.js
 import fs from "fs";
 import QRCode from "qrcode";
 import path from "path";

@@ -1,3 +1,4 @@
+// server/routes/index.js
 import { Router } from "express";
 import health from "./health.routes.js";
 import session from "./session.routes.js";

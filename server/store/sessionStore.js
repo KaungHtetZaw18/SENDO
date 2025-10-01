@@ -1,4 +1,4 @@
-// server/sessionStore.js
+// server/store/sessionStore.js
 import crypto from "crypto";
 import { customAlphabet } from "nanoid";
 

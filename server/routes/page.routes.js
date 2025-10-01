@@ -1,3 +1,4 @@
+// server/routes/page.routes.js
 import { Router } from "express";
 import { landing, sender, receiver } from "../controllers/page.controller.js";
 

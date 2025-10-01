@@ -1,3 +1,4 @@
+// server/middlewares/error.js
 export function apiError(status, message, extra = {}) {
   const err = new Error(message);
   err.status = status;

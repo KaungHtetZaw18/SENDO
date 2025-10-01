@@ -1,3 +1,4 @@
+// server/controllers/session.controller.js
 import {
   createSession,
   getSessionById,
