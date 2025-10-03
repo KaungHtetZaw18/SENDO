@@ -1,4 +1,4 @@
-// sender.js (ES6)
+// /sender.js (ES6)
 (() => {
   // ----- helpers -----
   const readMeta = (name) => {
@@ -41,6 +41,7 @@
     senderToken: null,
     hbTimer: null,
     pollTimer: null,
+    beaconSent: false,
   };
 
   // ----- parse params -----
@@ -86,19 +87,14 @@
         "GET",
         `/api/session/${encodeURIComponent(state.sessionId)}/status`
       );
-      if (!r || r.status !== 200) {
-        // receiver closed / TTL / network problem: land
-        return teardownToLanding();
-      }
+      if (!r || r.status !== 200) return;
       let json;
       try {
         json = JSON.parse(r.responseText);
       } catch {
         return;
       }
-      if (json && (json.closed || json.status === "closed")) {
-        return teardownToLanding();
-      }
+      if (json?.closed) teardownToLanding();
     }, 1500);
   };
   const stopPoll = () => {
@@ -106,31 +102,26 @@
     state.pollTimer = null;
   };
 
-  // ----- disconnect (single path) -----
-  const disconnectAndLand = (by = "sender") => {
-    if (state.sessionId) {
-      try {
-        const data = JSON.stringify({ sessionId: state.sessionId, by });
-        if (navigator.sendBeacon) {
-          navigator.sendBeacon(
-            (API || "") + "/api/disconnect",
-            new Blob([data], { type: "application/json" })
-          );
-        } else {
-          const x = new XMLHttpRequest();
-          x.open("POST", (API || "") + "/api/disconnect", false);
-          x.setRequestHeader("Content-Type", "application/json");
-          try {
-            x.send(data);
-          } catch (_) {}
-        }
-      } catch (_) {}
-    }
+  // ----- disconnect -----
+  const sendBeaconDisconnect = () => {
+    try {
+      if (state.beaconSent || !state.sessionId || !navigator.sendBeacon) return;
+      state.beaconSent = true;
+      const data = JSON.stringify({ sessionId: state.sessionId, by: "sender" });
+      navigator.sendBeacon(
+        (API || "") + "/api/disconnect",
+        new Blob([data], { type: "application/json" })
+      );
+    } catch {}
+  };
+  const manualDisconnect = async () => {
+    if (!state.sessionId) return teardownToLanding();
+    await xhr("POST", "/api/disconnect", {
+      sessionId: state.sessionId,
+      by: "sender",
+    });
     teardownToLanding();
   };
-
-  const manualDisconnect = () => disconnectAndLand("sender");
-
   const teardownToLanding = () => {
     stopHeartbeat();
     stopPoll();
@@ -264,7 +255,6 @@
     };
     tryFlip();
 
-    // refresh TTL non-blocking
     xhr("POST", "/api/connect", { sessionId: state.sessionId });
     startHeartbeat();
     startPoll();
@@ -277,14 +267,13 @@
     $("disconnectBtn").onclick = manualDisconnect;
     $("fileInput").addEventListener("change", onFileChange);
 
-    // auto-disconnect on close/offline
-    window.addEventListener("pagehide", () => disconnectAndLand("sender"), {
+    window.addEventListener("pagehide", () => sendBeaconDisconnect(), {
       capture: true,
     });
-    window.addEventListener("beforeunload", () => disconnectAndLand("sender"), {
+    window.addEventListener("beforeunload", () => sendBeaconDisconnect(), {
       capture: true,
     });
-    window.addEventListener("offline", () => disconnectAndLand("sender"));
+    window.addEventListener("offline", () => sendBeaconDisconnect());
   };
 
   const boot = async () => {

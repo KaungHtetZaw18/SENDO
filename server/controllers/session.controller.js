@@ -6,7 +6,7 @@ import {
   touchSession,
   closeSession,
 } from "../store/sessionStore.js";
-import { SENDER_GONE_MS } from "../config/env.js";
+
 import { setNoCache } from "../app.js";
 import { SESSION_TTL_SECONDS, FRONTEND_BASE } from "../config/env.js";
 
@@ -87,8 +87,6 @@ export function joinViaQR(req, res) {
 }
 
 // --- Get session status ---
-import { SENDER_GONE_MS } from "../config/env.js";
-
 export async function getStatus(req, res) {
   const s = getSessionById(String(req.params.id));
   if (!s) return res.status(404).json({ ok: false, error: "Not found" });
@@ -97,10 +95,6 @@ export async function getStatus(req, res) {
   const closed =
     s.status === "closed" ||
     (Number.isFinite(s.expiresAt) && s.expiresAt <= now);
-
-  // derive live-ness instead of trusting the sticky boolean
-  const senderConnected =
-    s.lastSeenSender > 0 && now - s.lastSeenSender <= SENDER_GONE_MS;
 
   setNoCache(res);
   res.json({
@@ -116,9 +110,10 @@ export async function getStatus(req, res) {
     secondsLeft: Number.isFinite(s.expiresAt)
       ? Math.max(0, Math.floor((s.expiresAt - now) / 1000))
       : null,
-    senderConnected,
+    senderConnected: s.senderConnected,
   });
 }
+
 // --- Heartbeat ---
 export async function heartbeat(req, res) {
   const { sessionId, role } = req.body || {};
