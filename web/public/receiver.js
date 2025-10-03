@@ -1,3 +1,4 @@
+// receiver.js (ES5)
 (function () {
   // ---------- config ----------
   function readMeta(name) {
@@ -55,6 +56,43 @@
   var hbTimer = null;
   var pollTimer = null;
 
+  // ---------- hard disconnect + land (ES5) ----------
+  function doDisconnect(by) {
+    if (!sessionId) {
+      // already torn down; just land
+      setTimeout(function () {
+        window.location.replace("/");
+      }, 50);
+      return;
+    }
+
+    var data = JSON.stringify({ sessionId: sessionId, by: by || "receiver" });
+    try {
+      // best-effort beacon
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(
+          API + "/api/disconnect",
+          new Blob([data], { type: "application/json" })
+        );
+      } else {
+        throw new Error("no beacon");
+      }
+    } catch (_) {
+      // fallback sync XHR
+      try {
+        var x = new XMLHttpRequest();
+        x.open("POST", API + "/api/disconnect", false); // sync
+        x.setRequestHeader("Content-Type", "application/json");
+        x.send(data);
+      } catch (e) {}
+    }
+
+    teardown();
+    setTimeout(function () {
+      window.location.replace("/");
+    }, 50);
+  }
+
   // ---------- heartbeat ----------
   function startHeartbeat() {
     stopHeartbeat();
@@ -85,21 +123,25 @@
         API + "/api/session/" + encodeURIComponent(sessionId) + "/status",
         function (err, x) {
           if (err || !x) return;
+          // If the session endpoint fails (e.g., closed/expired), disconnect+land
           if (x.status !== 200) {
-            teardownToLanding();
+            doDisconnect("receiver");
             return;
           }
           var json = null;
           try {
             json = JSON.parse(x.responseText);
           } catch (_) {}
+
           if (!json) return;
 
+          // If server says closed, disconnect+land
           if (json.closed || json.status === "closed") {
-            teardownToLanding();
+            doDisconnect("receiver");
             return;
           }
 
+          // Update UI for file availability
           if (json.hasFile && receiverToken) {
             var href =
               API +
@@ -146,13 +188,6 @@
     receiverToken = null;
   }
 
-  function teardownToLanding() {
-    teardown();
-    setTimeout(function () {
-      window.location.replace("/");
-    }, 100);
-  }
-
   // ---------- QR ----------
   function setQR(sid) {
     var q = $("qr");
@@ -183,6 +218,11 @@
 
   // ---------- create session ----------
   function createSession() {
+    // If we already have a session, close it first so Sender bounces
+    if (sessionId) {
+      doDisconnect("receiver");
+    }
+
     setStatus("Creating session…");
     setDebug("");
     xhrGET(
@@ -221,6 +261,25 @@
       }
     );
   }
+
+  // ---------- auto-disconnect on close/offline ----------
+  window.addEventListener(
+    "pagehide",
+    function () {
+      doDisconnect("receiver");
+    },
+    true
+  );
+  window.addEventListener(
+    "beforeunload",
+    function () {
+      doDisconnect("receiver");
+    },
+    true
+  );
+  window.addEventListener("offline", function () {
+    doDisconnect("receiver");
+  });
 
   // ---------- init ----------
   if (document.readyState === "loading") {

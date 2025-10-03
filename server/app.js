@@ -39,6 +39,12 @@ app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: false }));
 app.use(morgan("dev"));
 
+// --- HEALTH (for Render wake) ---
+// Keep this very fast (no DB work). CORS enabled so your separate frontend can call it.
+app.get("/health", cors({ origin: "*" }), (_req, res) => {
+  res.status(200).json({ ok: true, ts: Date.now() });
+});
+
 // static only if SERVE_WEB=true
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

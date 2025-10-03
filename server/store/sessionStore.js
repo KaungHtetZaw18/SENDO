@@ -1,6 +1,7 @@
 // server/store/sessionStore.js
 import crypto from "crypto";
 import { customAlphabet } from "nanoid";
+import { SENDER_GONE_MS, RECEIVER_GONE_MS } from "../config/env.js";
 
 // Public 4-char code (no 0,1,O,I to avoid confusion)
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -74,9 +75,13 @@ export function purgeSession(session) {
   sessionsByCode.delete(session.code);
 }
 
+import { SENDER_GONE_MS, RECEIVER_GONE_MS } from "../config/env.js";
+
 export function sweepExpired() {
   const now = Date.now();
+
   for (const s of sessionsById.values()) {
+    // 1) TTL expiry
     if (
       s.status !== "closed" &&
       Number.isFinite(s.expiresAt) &&
@@ -84,6 +89,26 @@ export function sweepExpired() {
     ) {
       closeSession(s, "ttl");
     }
+
+    // 2) Liveness: sender disappeared
+    if (
+      s.status !== "closed" &&
+      s.lastSeenSender > 0 &&
+      now - s.lastSeenSender > SENDER_GONE_MS
+    ) {
+      closeSession(s, "sender_gone");
+    }
+
+    // 3) Liveness: receiver disappeared
+    if (
+      s.status !== "closed" &&
+      s.lastSeenReceiver > 0 &&
+      now - s.lastSeenReceiver > RECEIVER_GONE_MS
+    ) {
+      closeSession(s, "receiver_gone");
+    }
+
+    // 4) Garbage-collect tombstones
     if (
       s.status === "closed" &&
       s.closedAt &&
