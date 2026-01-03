@@ -10,11 +10,10 @@ services:
       - key: SERVE_WEB
         value: "true"
       - key: FRONTEND_BASE
-        value: "https://sendo-0k57.onrender.com"
+        value: "https://sendo-ebook.vercel.app/"
     buildCommand: |
       npm --prefix server ci
-      npm --prefix web ci || true
-      npm --prefix web run build || true
-    startCommand: |
-      cd server && node server.js
+      npm --prefix web ci
+      npm --prefix web run build
+    startCommand: cd server && node server.js
     healthCheckPath: /api/health
